@@ -60,7 +60,9 @@ show streams;
 
 ## Stream
 
-- Create stream/table 명령어의 With 절은 Topic과 Format에 대한 설정을 부여할 수 있음. 만약 Topic이 미리 만들어져 있지 않으면 해당 Topic명과 설정으로 새롭게 Topic 생성.  새로운 TOPIC을 생성할 때는 반드시 With 절로 KAFKA_TOPIC, VALUE_FORMAT 그리고 생성될 TOPIC의 PARTITIONS 갯수를 반드시 지정해 줘야 함.
+- Create stream/table 명령어의 With 절은 Topic과 Format에 대한 설정을 부여할 수 있음. 만약 Topic이 미리 만들어져 있지 않으면 해당 Topic명과 설정으로 새롭게 Topic 생성.
+- 새로운 TOPIC을 생성할 때는 반드시 With 절로 KAFKA_TOPIC, VALUE_FORMAT 그리고 생성될 TOPIC의 PARTITIONS 갯수를 반드시 지정해 줘야 함.
+- Stream은 Topic과 마찬가지로 Key값을 가질 수도, 그렇지 않을수도 있음.
 
 ```sql
 create stream simple_user_stream 
@@ -106,39 +108,20 @@ print simple_user_stream from beginning;
 
 - 토픽 메시지의 json 메시지는 별도의 Schema 정보를 가지고 있지 않음.
 
+### Describe 로 Stream 메타 정보 확인
+
+- describe stream/table명 extended를 이용하여 Stream/Table의 DDL, 데이터 타입등 주요 메타 정보에 대한 정보를 알수 있음.
+
+```sql
+describe simple_user_stream extended;
+```
+
 ### Stream/Table/CSAS/CTAS에 대한 metastore 정보
 
 - Stream/Table/CSAS/CTAS에 대한 metastore 정보는 _confluent-ksql-default__command_topic 토픽 정보에 저장됨.
 
 ```sql
 kafka-console-consumer --bootstrap-server localhost:9092 --topic _confluent-ksql-default__command_topic --from-beginning | jq '.'
-```
-
-### push query 수행
-
-- Stream에 데이터 추가가 있을 때 이를 실시간으로 Client로 전송 반영하는 Push Query 수행. push query는 emit changes 절로 수행.
-
-```sql
-SET 'auto.offset.reset'='earliest';
-
-select * from simple_user_stream emit changes;
-```
-
-- PUSH QUERY 수행 시 Stream Thread가 Consumer를 기반으로 데이터를 계속 가져오게 됨. 이를 위해 새롭게 Consumer Group에서 Active Consumer를 생성.  kafka-consumer-groups 명령어로 consumer group 리스트 확인.
-
-```sql
-kafka-consumer-groups --bootstrap-server localhost:9092 --list
-
-# 아래 명령어는 특정 consumer group 으로 consumer 들 정보를 보다 상세하게 조회
-kafka-consumer-groups --bootstrap-server localhost:9092 --group consumer_group_명 --describe
-```
-
-- ksql cli를 다른 터미널에서 기동한 후 현재 수행중인 Query에 대한 정보 확인. push 쿼리는 계속 특정 Query가 수행되고 있음을 알 수 있음.
-
-```sql
-ksql
-
-show queries;
 ```
 
 ### Stream과 Topic
@@ -155,67 +138,6 @@ select * from simple_user_stream;
 
 ```sql
 insert into simple_user_stream(id, name, email) values (3, 'test_name_03', 'test_email_03@test.domain');
-```
-
-### Stream 삭제
-
-- Stream은 삭제 될 수 있으며,  삭제 시 Topic과 별도로, 또는 Topic과 함께 삭제 될 수 있음.
-- 아래는 Stream을 삭제하되 Topic은 그대로 유지.  Stream 삭제시 기존 Stream을 위한 Producer등 관련 Resource등이 함께 Close됨을 KSQL 로그 메시지를 통해 확인 할 수 있음.
-
-```sql
-drop stream simple_user_stream;
-
-# 아래는 stream이 없으므로 오류 발생. 
-select * from simple_user_stream;
-
-# 아래는 topic이 여전히 존재하므로 메시지
-print simple_user_stream 
-```
-
-- Stream 삭제시 topic도 함께 삭제하려면 delete topic 절을 사용.  ksqldb 설정에 auto.create.topics.enabled=true로 설정되어 있어야 함.  아래 참조할 것.
-
-[DROP STREAM - ksqlDB Documentation](https://docs.ksqldb.io/en/latest/developer-guide/ksqldb-reference/drop-stream/)
-
-```sql
-drop stream simple_user_stream delete_topic;
-```
-
-- Stream 재생성 후 select 명령어 수행. 이미 Topic에 메시지가 들어있으므로 Select stream은 해당 레코드 출력. 이때 기존 topic이 있더라도 Create Stream 시 with절에 반드시 value_format을 명시해 줘야 함. 아래는 value_format을 명시하지 않아서 오류 발생.
-
-```sql
-//아래는 value_format을 명시하지 않아서 오류 발생. 
-create stream simple_user_stream 
-(
-  id int,
-  name varchar,
-  email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_stream'
-);
-```
-
-- value_format을 기재하여 재 생성.  만약 기존 생성된 Topic을 이용할 때 WITH절에 PARTITION 등을 기술해서는 안됨. 기존 TOPIC의 CONFIG를 변경할 수는 없음.  기존 topic 메시지를 사용하므로 select stream의 레코드가 출력됨.
-
-```sql
-create stream simple_user_stream 
-(
-  id int,
-  name varchar,
-  email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_stream',
-  VALUE_FORMAT ='JSON'
-);
-
-select * from simple_user_stream;
-```
-
-### Describe 로 Stream 메타 정보 확인
-
-- describe stream/table명 extended를 이용하여 Stream/Table의 DDL, 데이터 타입등 주요 메타 정보에 대한 정보를 알수 있음.
-
-```sql
-describe simple_user_stream extended;
 ```
 
 ### Key를 가지는 Stream
@@ -311,6 +233,8 @@ insert into simple_user_stream(id, name, email, phone_no) values
 select * from simple_user_stream;
 ```
 
+- KSQLDB는 컬럼의 Not Null 제약을 지원하지 않음.  기본적으로 Nullable 값이며, Not Null 키워드로 컬럼 Constraint를 지원하지 않음. 단 Table의 경우 Primary Key는 반드시 Not Null이 묵시적으로 되어야 함.
+
 ### ROWTIME 의사 컬럼
 
 - 모든 Stream과 Table은 생성 시 지정된 컬럼외에 레코드의 생성 시점을 값으로 가지는 별도의 Timestamp 컬럼을 가질 수 있음. 만약 별도의 Timestamp 컬럼명을 생성 DDL 시 지정하지 않으면 컬럼명은 ROWTIME으로 지정됨. 이 Timestamp 컬럼은 생성 DDL시 KSQLDB에 의해서 추가적으로 생성되며. ROWTIME에 들어가는 값은 개별 레코드가 입력되는 시점을 Unix epoch 시간 가지며, BIGINT 타입의 컬럼임(Timestamp 타입의 컬럼이 아님)
@@ -325,6 +249,86 @@ select rowtime, a.* from simple_user_stream a;
 
 --rowtime 변환
 SELECT TIMESTAMPTOSTRING(ROWTIME, 'yyyy-MM-dd HH:mm:ss') as rowtime_string, a.* from simple_user_stream a;
+```
+
+### push query 수행
+
+- Stream에 데이터 추가가 있을 때 이를 실시간으로 Client로 전송 반영하는 Push Query 수행. push query는 emit changes 절로 수행.
+
+```sql
+SET 'auto.offset.reset'='earliest';
+
+select * from simple_user_stream emit changes;
+```
+
+- PUSH QUERY 수행 시 Stream Thread가 Consumer를 기반으로 데이터를 계속 가져오게 됨. 이를 위해 새롭게 Consumer Group에서 Active Consumer를 생성.  kafka-consumer-groups 명령어로 consumer group 리스트 확인.
+
+```sql
+kafka-consumer-groups --bootstrap-server localhost:9092 --list
+
+# 아래 명령어는 특정 consumer group 으로 consumer 들 정보를 보다 상세하게 조회
+kafka-consumer-groups --bootstrap-server localhost:9092 --group consumer_group_명 --describe
+```
+
+- ksql cli를 다른 터미널에서 기동한 후 현재 수행중인 Query에 대한 정보 확인. push 쿼리는 계속 특정 Query가 수행되고 있음을 알 수 있음.
+
+```sql
+ksql
+
+show queries;
+```
+
+### Stream 삭제
+
+- Stream은 삭제 될 수 있으며,  삭제 시 Topic과 별도로, 또는 Topic과 함께 삭제 될 수 있음.
+- 아래는 Stream을 삭제하되 Topic은 그대로 유지.  Stream 삭제시 기존 Stream을 위한 Producer등 관련 Resource등이 함께 Close됨을 KSQL 로그 메시지를 통해 확인 할 수 있음.
+
+```sql
+drop stream simple_user_stream;
+
+# 아래는 stream이 없으므로 오류 발생. 
+select * from simple_user_stream;
+
+# 아래는 topic이 여전히 존재하므로 메시지
+print simple_user_stream 
+```
+
+- Stream 삭제시 topic도 함께 삭제하려면 delete topic 절을 사용.  ksqldb 설정에 auto.create.topics.enabled=true로 설정되어 있어야 함.  아래 참조할 것.
+
+[DROP STREAM - ksqlDB Documentation](https://docs.ksqldb.io/en/latest/developer-guide/ksqldb-reference/drop-stream/)
+
+```sql
+drop stream simple_user_stream delete_topic;
+```
+
+- Stream 재생성 후 select 명령어 수행. 이미 Topic에 메시지가 들어있으므로 Select stream은 해당 레코드 출력. 이때 기존 topic이 있더라도 Create Stream 시 with절에 반드시 value_format을 명시해 줘야 함. 아래는 value_format을 명시하지 않아서 오류 발생.
+
+```sql
+//아래는 value_format을 명시하지 않아서 오류 발생. 
+create stream simple_user_stream 
+(
+  id int,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_stream'
+);
+```
+
+- value_format을 기재하여 재 생성.  만약 기존 생성된 Topic을 이용할 때 WITH절에 PARTITION 등을 기술해서는 안됨. 기존 TOPIC의 CONFIG를 변경할 수는 없음.  기존 topic 메시지를 사용하므로 select stream의 레코드가 출력됨.
+
+```sql
+create stream simple_user_stream 
+(
+  id int,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_stream',
+  VALUE_FORMAT ='JSON'
+);
+
+select * from simple_user_stream;
 ```
 
 ## KsqlDB Table
