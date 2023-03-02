@@ -30,12 +30,12 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic simple_user_str
 ```sql
 create stream simple_user_stream 
 (
-	id int,
-	name varchar,
-	email varchar
+  id int,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
-	VALUE_FORMAT ='JSON'
+  VALUE_FORMAT ='JSON'
 );
 
 select * from simple_user_stream;
@@ -65,12 +65,12 @@ show streams;
 ```sql
 create stream simple_user_stream 
 (
-	id int,
-	name varchar,
-	email varchar
+  id int,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 ```
@@ -186,9 +186,9 @@ drop stream simple_user_stream delete_topic;
 //아래는 value_format을 명시하지 않아서 오류 발생. 
 create stream simple_user_stream 
 (
-	id int,
-	name varchar,
-	email varchar
+  id int,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream'
 );
@@ -199,12 +199,12 @@ create stream simple_user_stream
 ```sql
 create stream simple_user_stream 
 (
-	id int,
-	name varchar,
-	email varchar
+  id int,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
-	VALUE_FORMAT ='JSON'
+  VALUE_FORMAT ='JSON'
 );
 
 select * from simple_user_stream;
@@ -233,12 +233,12 @@ print simple_user_stream;
 //새롭게 id를 key로 부여하여 simple_user_stream
 create stream simple_user_stream 
 (
-	id int key,
-	name varchar,
-	email varchar
+  id int key,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 
@@ -283,13 +283,13 @@ print simple_user_stream;
 //새롭게 id를 key로 부여하여 simple_user_stream
 create stream simple_user_stream 
 (
-	id integer key,
-	name varchar,
-	email varchar
+  id integer key,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 
@@ -336,26 +336,26 @@ SELECT TIMESTAMPTOSTRING(ROWTIME, 'yyyy-MM-dd HH:mm:ss') as rowtime_string, a.* 
 //아래 명령어는 table 생성 시 primary key를 지정하지 않았으므로 오류를 발생 시킴. 
 create table simple_user_table 
 (
-	id integer,
-	name varchar,
-	email varchar
+  id integer,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_table',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 
 //table 생성 시 primary key 지정 필요. 
 create table simple_user_table 
 (
-	id integer primary key,
-	name varchar,
-	email varchar
+  id integer primary key,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_table',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 ```
