@@ -88,7 +88,6 @@ show streams;
 show topics;
 ```
 
-- 새롭게 생성된 Stream과 Topic에는 아무런 Message가 없음.
 - 새롭게 생성된 Stream에 데이터를 insert 문으로 입력 후 Stream과 Topic 메시지 확인.
 
 ```sql
@@ -124,22 +123,6 @@ describe simple_user_stream extended;
 kafka-console-consumer --bootstrap-server localhost:9092 --topic _confluent-ksql-default__command_topic --from-beginning | jq '.'
 ```
 
-### Stream과 Topic
-
-- Stream은 기본적으로 Topic을 기반으로 함.  Stream은 Topic을 기반으로 생성됨.  Stream의 Select는 Topic에서 Consumer client를 통해 메시지를 읽는 것과 동일. Stream의 Insert는 Producer Client를 통해 Topic에 메시지를 기록하는 것과 동일.
-- Stream은 update와 delete operation이 없음. 이는 한번 기록된 Topic 메시지는 삭제 또는 변경을 허용하지 않기 때문임.
-- 아래와 같이 select 명령어를 stream에 수행 후 ksql console 의 로그 메시지를 확인해 보면 Consumer가 생성 후 동작되고 이후 close 됨을 알 수 있음.
-
-```sql
-select * from simple_user_stream;
-```
-
-- 아래와 같이 insert 명령어를 수행 후 ksql console의 로그 메시지를 확인해 보면 **Producer**가 설정되어 동작함을 알 수 있음.
-
-```sql
-insert into simple_user_stream(id, name, email) values (3, 'test_name_03', 'test_email_03@test.domain');
-```
-
 ### Key를 가지는 Stream
 
 - 대부분의 Topic은 key값을 가지고 있음(성능상 Partition별 분할등을 위해). Stream역시 이를 반영하여 구성 필요. Stream의 Key는 topic의 Key와 동일한 개념이며 중복 값을 가질 수 있음. 반면에 Table의 PK는 Stream의 Key와는 다르게 중복값을 가질 수 없음.
@@ -160,6 +143,7 @@ create stream simple_user_stream
   email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
+  KEY_FORMAT = 'KAFKA',
   VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
@@ -183,44 +167,100 @@ select * from simple_user_stream;
 print simple_user_stream;
 ```
 
-- 또는 아래와 같이 kafka-console-consumer를 이용하여 topic 메시지 확인할 수 있지만, KEY값이 출력하지 않음. 왜냐하면 ‘KAFKA’로 지정된 KEY FORMAT을 kafka-console-consumer 명령어가 제대로 인식하지 못하기 때문.
+### pull query와 push query
+
+- Stream에 데이터 추가가 있을 때 이를 실시간으로 Client로 전송 반영하는 Push Query 수행. push query는 emit changes 절로 수행.
 
 ```sql
-kafka-console-consumer --bootstrap-server localhost:9092 --topic simple_user_stream --from-beginning --property print.key=true
+SET 'auto.offset.reset'='earliest';
+
+--pull query
+select * from simple_user_stream;
+
+-- 다른 CLI 창에서 아래 PUSH 쿼리 수행. 
+SET 'auto.offset.reset'='earliest';
+
+select * from simple_user_stream emit changes;
 ```
 
-- value_format과 달리 key_format은 별도로 지정하지 않으면 default 값인 ‘KAKFA’ 로 설정됨.
-- format 값 KAFKA는 integer, string, float등의 primitive 타입의 직렬화에 사용되는 포맷임. KAFKA로 Format이 설정되면 해당 컬럼의 타입과 동일하게 직렬화가 수행됨. 즉 id 컬럼이 integer이면 key_format도 마찬가지로 integer로 설정됨. 아래 참조
-
-[Serialization](https://docs.ksqldb.io/en/latest/reference/serialization/#kafka)
-
-- 아래와 같이 key_format을 명시적으로 설정할 수도 있음.
+- 새로운 데이터를 추가하고 push 쿼리의 변경 사항을 확인
 
 ```sql
+insert into simple_user_stream(id, name, email) values (3, 'test_name_03', 'test_email_03@test.domain');
+
+-- PUSH 쿼리 CLI 창에서 내용 확인. 
+
+-- 한번 더 데이터 입력하고 PUSH 쿼리 CLI 창에서 내용 확인
+insert into simple_user_stream(id, name, email) values (4, 'test_name_04', 'test_email_04@test.domain');
+```
+
+- PUSH QUERY 수행 시 Stream Thread가 Consumer를 기반으로 데이터를 계속 가져오게 됨. 이를 위해 새롭게 Consumer Group에서 Active Consumer를 생성.  kafka-consumer-groups 명령어로 consumer group 리스트 확인.
+
+```sql
+kafka-consumer-groups --bootstrap-server localhost:9092 --list
+
+# 아래 명령어는 특정 consumer group 으로 consumer 들 정보를 보다 상세하게 조회
+kafka-consumer-groups --bootstrap-server localhost:9092 --group consumer_group_명 --describe
+```
+
+### Query 오브젝트
+
+- KSQLDB를 재기동하고도 Consumer Group이 여전히 존재하면 아래와 같이 삭제
+
+```bash
+# 재 기동후 consumer group 조회
+kafka-consumer-groups --bootstrap-server localhost:9092 --list
+
+# consumer group에 No active members 확인. 
+kafka-consumer-groups --bootstrap-server localhost:9092 --group consumer그룹명 --describe
+
+# consumer group 삭제
+kafka-consumer-groups --bootstrap-server localhost:9092 --delete --group consumer그룹명
+```
+
+- ksql cli를 다른 터미널에서 기동한 후 현재 수행중인 Query에 대한 정보 확인. push 쿼리는 계속 특정 Query가 수행되고 있음을 알 수 있음.
+
+```sql
+ksql
+
+show queries;
+```
+
+### Data Type과 Alter DDL
+
+- 기존 simple_user_stream을 삭제하고 새로운 컬럼을 추가하여 신규로 생성.
+
+```bash
 drop stream simple_user_stream delete topic;
 
-//아래는 topic이 삭제되었으므로 오류가 발생. 
-print simple_user_stream;
-
-//새롭게 id를 key로 부여하여 simple_user_stream
 create stream simple_user_stream 
 (
-  id integer key,
+  id int,
+  salary decimal(10, 2),
+  created_time time,
+  created_date date,
+  created_ts timestamp,
   name varchar,
   email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_stream',
-  KEY_FORMAT = 'KAFKA', 
   VALUE_FORMAT ='JSON',
   PARTITIONS = 1
 );
 
+insert into simple_user_stream(id, salary, created_time, created_date, created_ts, name, email) values \
+(1, 987654.21, '05:23:32', '2023-03-07', '2023-03-07T05:23:32.931', 'test_name_01', 'test_email_01@domain.com');
+
+insert into simple_user_stream(id, salary, created_time, created_date, created_ts, name) values \
+(2, 987654.21, '05:23:32', '2023-03-07', '2023-03-07T05:23:32.931', 'test_name_02');
+
+select * from simple_user_stream;
+
+select unix_date(created_date) from simple_user_stream;
+
 ```
 
-### Alter DDL
-
-- Stream/Table은 Alter 명령어로 Column을 변경할 수 있으며, 현재 Add column 만 지원됨.
-- 아래는 simple_user_stream의 phone_no 컬럼을 추가함
+- Stream/Table은 Alter 명령어로 Column을 변경할 수 있으며, 현재 Add column 만 지원됨. 아래는 simple_user_stream의 phone_no 컬럼을 추가함
 
 ```sql
 alter stream simple_user_stream add column phone_no varchar;
@@ -247,35 +287,27 @@ select rowtime, * from simple_user_stream;
 --또는 
 select rowtime, a.* from simple_user_stream a;
 
---rowtime 변환
-SELECT TIMESTAMPTOSTRING(ROWTIME, 'yyyy-MM-dd HH:mm:ss') as rowtime_string, a.* from simple_user_stream a;
+--rowtime 변환. timestamptostring()함수는 deprecation됨. 
+--SELECT TIMESTAMPTOSTRING(ROWTIME, 'yyyy-MM-dd HH:mm:ss') as rowtime_string, a.* from simple_user_stream a;
+
+select from_unixtime(rowtime) as rowtime, a.*  from simple_user_stream a;
+
 ```
 
-### push query 수행
+### Stream과 Topic
 
-- Stream에 데이터 추가가 있을 때 이를 실시간으로 Client로 전송 반영하는 Push Query 수행. push query는 emit changes 절로 수행.
+- Stream은 기본적으로 Topic을 기반으로 함.  Stream은 Topic을 기반으로 생성됨.  Stream의 Select는 Topic에서 Consumer client를 통해 메시지를 읽는 것과 동일. Stream의 Insert는 Producer Client를 통해 Topic에 메시지를 기록하는 것과 동일.
+- Stream은 update와 delete operation이 없음. 이는 한번 기록된 Topic 메시지는 삭제 또는 변경을 허용하지 않기 때문임.
+- 아래와 같이 select 명령어를 stream에 수행 후 ksql console 의 로그 메시지를 확인해 보면 Consumer가 생성 후 동작되고 이후 close 됨을 알 수 있음.
 
 ```sql
-SET 'auto.offset.reset'='earliest';
-
-select * from simple_user_stream emit changes;
+select * from simple_user_stream;
 ```
 
-- PUSH QUERY 수행 시 Stream Thread가 Consumer를 기반으로 데이터를 계속 가져오게 됨. 이를 위해 새롭게 Consumer Group에서 Active Consumer를 생성.  kafka-consumer-groups 명령어로 consumer group 리스트 확인.
+- 아래와 같이 insert 명령어를 수행 후 ksql console의 로그 메시지를 확인해 보면 **Producer**가 설정되어 동작함을 알 수 있음.
 
 ```sql
-kafka-consumer-groups --bootstrap-server localhost:9092 --list
-
-# 아래 명령어는 특정 consumer group 으로 consumer 들 정보를 보다 상세하게 조회
-kafka-consumer-groups --bootstrap-server localhost:9092 --group consumer_group_명 --describe
-```
-
-- ksql cli를 다른 터미널에서 기동한 후 현재 수행중인 Query에 대한 정보 확인. push 쿼리는 계속 특정 Query가 수행되고 있음을 알 수 있음.
-
-```sql
-ksql
-
-show queries;
+insert into simple_user_stream(id, name, email) values (3, 'test_name_03', 'test_email_03@test.domain');
 ```
 
 ### Stream 삭제
@@ -331,7 +363,7 @@ create stream simple_user_stream
 select * from simple_user_stream;
 ```
 
-## KsqlDB Table
+## Table
 
 - Table은 Stream과 달리 반드시 PK를 가져야 하며, 이 PK는 고유한 값으로 데이터가 구성되어야 함.
 - Table 역시 Topic을 기반으로 함.
