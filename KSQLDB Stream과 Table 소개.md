@@ -277,7 +277,8 @@ select * from simple_user_stream;
 
 ### ROWTIME 의사 컬럼
 
-- 모든 Stream과 Table은 생성 시 지정된 컬럼외에 레코드의 생성 시점을 값으로 가지는 별도의 Timestamp 컬럼을 가질 수 있음. 만약 별도의 Timestamp 컬럼명을 생성 DDL 시 지정하지 않으면 컬럼명은 ROWTIME으로 지정됨. 이 Timestamp 컬럼은 생성 DDL시 KSQLDB에 의해서 추가적으로 생성되며. ROWTIME에 들어가는 값은 개별 레코드가 입력되는 시점을 Unix epoch 시간 가지며, BIGINT 타입의 컬럼임(Timestamp 타입의 컬럼이 아님)
+- 모든 Stream과 Table은 생성 시 지정된 컬럼외에 레코드의 생성 시점을 값으로 가지는 별도의 Timestamp 컬럼을 가질 수 있음. 만약 별도의 Timestamp 컬럼명을 생성 DDL 시 지정하지 않으면 컬럼명은 ROWTIME으로 지정됨. 이 Timestamp 컬럼은 생성 DDL시 KSQLDB에 의해서 추가적으로 생성.
+- ROWTIME에 들어가는 값은 개별 레코드가 입력되는 시점을 Unix epoch 시간 가지며, BIGINT 타입의 컬럼임(Timestamp 타입의 컬럼이 아님)
 
 ```sql
 describe simple_user_stream extended;
@@ -369,7 +370,7 @@ select * from simple_user_stream;
 - Table 역시 Topic을 기반으로 함.
 
 ```sql
-//아래 명령어는 table 생성 시 primary key를 지정하지 않았으므로 오류를 발생 시킴. 
+--아래 명령어는 table 생성 시 primary key를 지정하지 않았으므로 오류를 발생 시킴. 
 create table simple_user_table 
 (
   id integer,
@@ -382,8 +383,8 @@ create table simple_user_table
   PARTITIONS = 1
 );
 
-//table 생성 시 primary key 지정 필요. 
-create table simple_user_table 
+--table 생성 시 primary key 지정 필요. 
+create table simple_user_table
 (
   id integer primary key,
   name varchar,
@@ -402,15 +403,23 @@ create table simple_user_table
 describe simple_user_table extended;
 ```
 
-### Table 데이터 조회
+### Table 데이터 입력 및 조회
+
+- primary key가 null인 경우 insert 수행 시 오류
+
+```bash
+insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
+
+--primary key가 null인 경우 insert 수행 되지 않음. 
+insert into simple_user_table(name, email) values ('test_name_03', 'test_email_03@test.domain');
+
+```
 
 - topic을 직접 Source로 하는 Table에 pull 성 Query는 수행 되지 않음.  아래와 같이 데이터를 입력 후 select 쿼리를 수행하면 오류 발생.
 
 ```sql
-
-insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
-insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
-
+-- 아래 pull 쿼리는 오류 발생. 
 select * from simple_user_table;
 ```
 
@@ -419,6 +428,55 @@ select * from simple_user_table;
 ```sql
 select * from simple_user_table emit changes;
 ```
+
+- table에 insert 수행 시 pk 컬럼은 topic의 key값으로 매칭되어 topic 메시지로 생성됨.
+
+```sql
+print simple_user_table;
+```
+
+### Table 데이터에 중복 데이터 입력
+
+- RDBMS의 Table에 Primary Key가 있으면 해당 key값으로 중복된 데이터 입력이 안됨.  ksqldb도 이와 유사하지만 table에 primary key가 중복된 데이터를 insert로 입력됨.  다만 ksqldb 의 table 자체에서 중복된 pk 데이터는 가장 최근에 입력된 데이터 하나만 유일하게 추출함.
+- 아래 SQL은 이미 id가 1인 레코드가 있지만 다시 id가 1인 레코드를 simple_user_table에 입력하지만 오류가 발생하지 않음.
+
+```sql
+insert into simple_user_table(id, name, email) values (1, 'new_test_name_01', 'new_test_email_01@test.domain');
+insert into simple_user_table(id, name, email) values (2, 'new_test_name_02', 'new_test_email_02@test.domain');
+```
+
+- 하지만 select 로 조회 시 id가 1인 레코드는 하나만 추출됨 id가 1인 레코드가 2인 레코드 보다 나중에 나옴에 유의. id가 1인 레코드가 나중에 다시 입력 되었으므로 select 조회시 마치 upsert와 같이 기존 id가 1인 레코드중 가장 최근(나중)에 입력된 데이터로 대체됨.
+
+```sql
+select * from simple_user_table emit changes;
+```
+
+- topic 으로 조회 시 id가 1인 레코드가 추가 되어 있음을 확인.
+
+```sql
+print simple_user_table;
+```
+
+- Stream을 생성하여 결과 확인.
+
+```sql
+create stream test_user_stream
+(
+  id integer key,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_table',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON'
+);
+
+select * from test_user_stream;
+
+drop stream test_user_stream;
+```
+
+### RocksDB 동작 확인
 
 - Table에 수행되는 push 성 쿼리는 topic→ rocks db를 거치는 쿼리로 수행됨.  table에 push 쿼리를 수행 할 경우 임시성 changelog 토픽이 생성됨.  더불어 rocks db도 함께 기동하여 rocks db 파일도 같이 생성됨.
 
@@ -433,31 +491,3 @@ ls -lrt
 
 - push 쿼리를 종료하면 임시성 changelog 토픽도 삭제되고 rocksdb 의 파일도 삭제됨.
 - table에 pull 쿼리를 수행하기 위해서는 create table as select … 로 생성된 table만 pull 쿼리가 가능.  create table as 로 생성된 table을 기본으로 materialized 되어 query와 rocks db가 interfrace 연결되므로 pull 쿼리가 수행 가능. 하지만 topic을 직접 소스로 하는 table은 바로 rocks db와 interface 하지 않기에 pull 쿼리 수행 불가.
-- table에 insert 수행 시 pk 컬럼은 topic의 key값으로 매칭되어 topic 메시지로 생성됨.
-
-```sql
-print simple_user_table;
-```
-
-### Table 데이터에 중복 데이터 입력
-
-- RDBMS의 Table에 Primary Key가 있으면 해당 key값으로 중복된 데이터 입력이 안됨.  ksqldb도 이와 유사하지만 table에 primary key가 중복된 데이터를 insert로 입력됨.  다만 ksqldb 의 table 자체에서 중복된 pk 데이터는 가장 최근에 입력된 데이터 하나만 유일하게 추출함.
-- 아래 SQL은 이미 id가 1인 레코드가 있지만 다시 id가 1인 레코드를 simple_user_table에 입력하지만 오류가 발생하지 않음.
-
-```sql
-
-insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
-
-```
-
-- 하지만 select 로 조회 시 id가 1인 레코드는 하나만 추출됨 id가 1인 레코드가 2인 레코드 보다 나중에 나옴에 유의. id가 1인 레코드가 나중에 다시 입력 되었으므로 select 조회시 마치 upsert와 같이 기존 id가 1인 레코드중 가장 최근(나중)에 입력된 데이터로 대체됨.
-
-```sql
-select * from simple_user_table emit changes;
-```
-
-- topic 으로 조회 시 id가 1인 레코드가 추가 되어 있음을 확인.
-
-```sql
-print simple_user_table;
-```
