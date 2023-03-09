@@ -2,7 +2,7 @@
 
 ## 주요 SQL 쿼리 수행해보기
 
-- simple_products 테이블을 생성.
+- simple_products 스트림을 생성.
 
 ```sql
 drop stream simple_products delete topic;
