@@ -5,10 +5,10 @@
 - simple_products 테이블을 생성.
 
 ```sql
-drop table simple_products delete topic;
+drop stream simple_products delete topic;
 
-CREATE TABLE simple_products (
-  product_id VARCHAR PRIMARY KEY,
+CREATE STREAM simple_products (
+  product_id VARCHAR KEY,
   product_name VARCHAR,
   category VARCHAR,
   price DECIMAL(10,2),
@@ -17,6 +17,7 @@ CREATE TABLE simple_products (
   reg_timestamp TIMESTAMP
 ) WITH (
   KAFKA_TOPIC = 'simple_products_topic',
+  KEY_FORMAT = 'KAFKA',
   VALUE_FORMAT = 'JSON',
   PARTITIONS = 3
 );
@@ -41,12 +42,8 @@ VALUES ( 'p006', 'handbag', 'fashion', 126.00, '2023-02-08', '17:36:37', '2023-0
 
 INSERT INTO simple_products ( product_id, product_name, price) values ('p007', 'pocketmon', 30.00);
 
-show tables;
+SELECT * FROM simple_products;
 
--- 아래는 pull 쿼리로 수행 시 오류 발생. 
-select category, count(*) from simple_products group by category;
-
-select category, count(*) as from simple_products group by category emit changes;
 ```
 
 ### Projection, Filtering
@@ -55,50 +52,59 @@ select category, count(*) as from simple_products group by category emit changes
 
 ```sql
 --projection
-select product_name, category from simple_products emit changes;
+select product_name, category from simple_products;
 
 --table alias
-select a.product_name, a.category from simple_products a emit changes;
+select a.product_name, a.category from simple_products a;
 
 --column alias
-select product_name, category as cat_name from simple_products emit changes;
+select product_name, category as cat_name from simple_products;
 
 -- where 조건 =, in, like
-select * from simple_products where category = 'beverages' emit changes;
-select * from simple_products where category in ('beverages', 'pets') emit changes;
-select * from simple_products where product_name like 'c%' emit changes;
+select * from simple_products where category = 'beverages';
+select * from simple_products where category in ('beverages', 'pets');
+select * from simple_products where product_name like 'c%';
 
-select * from simple_products where price > 10 emit changes;
-select * from simple_products where price between 100 and 200 emit changes;
+select * from simple_products where price > 10 ;
+select * from simple_products where price between 100 and 200;
 
+```
+
+### Limit 절의 사용
+
+- limit 절을 사용하여 SQL 수행 결과를 일부만 출력. limit 절 조건을 만족하면 push 쿼리도 자동으로 종료
+
+```bash
+select * from simple_products where category = 'beverages' limit 1;
+select * from simple_products where category = 'beverages' emit changes limit 1;
 ```
 
 ### 문자열 concat
 
-- 문자열 concat은 + 를 사용.  || 가 제대로 동작하지 않음(과거 버전에는 제대로 동작? 기억이 가물). ||은 concat 함수로 대체 가능. 하지만 concat() 함수는 3개 이상의 값을 연결할 때 중첩 형태로 호출이 되어야 해서 불편.
+- 문자열 concat은 + 를 사용.  || 가 (더이상)제대로 동작하지 않음.  ||은 concat 함수로 대체 가능. 하지만 concat() 함수는 3개 이상의 값을 연결할 때 중첩 형태로 호출이 되어야 해서 불편.
 
 ```sql
-select product_name+','+category as concat_str from simple_products emit changes;
+select product_name+','+category as concat_str from simple_products;
 
 -- 아래는 오류 발생. 
-select product_name||category as concat_str from simple_products emit changes;
+select product_name||category as concat_str from simple_products ;
 
 -- || 는 concat() 함수로 대체됨. 
-select concat(product_name, category) as concat_str from simple_products emit changes;
+select concat(product_name, category) as concat_str from simple_products ;
 
-select concat(product_name, concat(',', category)) as concat_str from simple_products emit changes;
+select concat(product_name, concat(',', category)) as concat_str from simple_products;
 ```
 
 - concat_ws()는 여러개의 문자열을 동일한 seperator로 결합하여 사용.
 
 ```sql
-select concat_ws(',', product_name, category) as concat_str from simple_products emit changes;
+select concat_ws(',', product_name, category) as concat_str from simple_products;
 ```
 
 - 숫자형과 문자형 컬럼값을 문자값으로 concat 할 수 없음.  concat은 문자열만 가능하므로 숫자형은 문자열로 형변환을 해야함.
 
 ```sql
-select product_name + price from simple_products emit changes;
+select product_name + price from simple_products;
 ```
 
 ### cast() - 컬럼형 변환
@@ -107,13 +113,13 @@ select product_name + price from simple_products emit changes;
 - 아래는 cast()를 이용하여 price를 문자열로 형변환 후 문자열 concat 수행.
 
 ```sql
-select product_name + ':' + cast(price as varchar) as concat_str from simple_products emit changes;
+select product_name + ':' + cast(price as varchar) as concat_str from simple_products;
 ```
 
 - 아래는 bigint 타입인 rowtime을 문자열로 변경하여 문자열 concat 수행.
 
 ```sql
-select '데이터 입력시간:' + cast(rowtime as varchar) as concat_str from simple_products emit changes;
+select '데이터 입력시간:' + cast(rowtime as varchar) as concat_str from simple_products;
 ```
 
 ### ifnull(), coalesce() - Null값 치환
@@ -123,15 +129,15 @@ select '데이터 입력시간:' + cast(rowtime as varchar) as concat_str from s
 ```sql
 insert into simple_products(product_id, product_name, price) values ('p007', 'testprd', 100);
 
-select * from simple_products emit changes;
+select * from simple_products;
 ```
 
 - ifnull() 또는 coalesce()를 이용하여 category 컬럼값이 null이면 ‘etc’로 변환하여 출력
 
 ```sql
-select product_name, ifnull(category, 'etc') as category from simple_products emit changes;
+select product_name, ifnull(category, 'etc') as category from simple_products;
 
-select product_name, coalesce(category, 'etc') as category from simple_products emit changes;
+select product_name, coalesce(category, 'etc') as category from simple_products ;
 ```
 
 ### Case when 구문
@@ -141,13 +147,13 @@ select product_name, coalesce(category, 'etc') as category from simple_products 
 ```sql
 select product_name,
        case when category is null then 'etc' 
-            else category end as category from simple_products emit changes; 
+            else category end as category from simple_products; 
 
 select product_name, price,
        case when price <= 100 then 'LOW'
             when price <= 200 then 'MEDIUM'
             else 'HIGH' end as grade
-from simple_products emit changes;
+from simple_products;
 ```
 
 ### Temporal 타입(Data/Time/Timestamp) 변환
@@ -157,11 +163,11 @@ from simple_products emit changes;
 ```sql
 select product_name, format_date(reg_date, 'yyyy-MM-dd') as reg_date_str,
        format_timestamp(reg_timestamp, 'yyyy-MM-dd HH:mm:ss') as reg_timestamp_str
-from simple_products emit changes;
+from simple_products;
 
 select product_name, format_date(reg_date, 'MM/dd, yyyy') as reg_date_str,
        format_timestamp(reg_timestamp, 'MM/dd, yyyy HH:mm') as reg_timestamp_str
-from simple_products emit changes;
+from simple_products;
 ```
 
 - parse_date()로 문자열을 Date로 변환
@@ -169,7 +175,7 @@ from simple_products emit changes;
 ```sql
 select product_name, format_date(reg_date, 'MM/dd, yyyy') as reg_date_str,
        parse_date(format_date(reg_date, 'MM/dd, yyyy'), 'MM/dd, yyyy') as reg_date
-from simple_products emit changes;
+from simple_products;
 ```
 
 ### Date/Timestamp 타입 값을 int/long형 Unix Time값으로 변환
@@ -177,7 +183,7 @@ from simple_products emit changes;
 - unix_date(Date)는 인자로 들어온 Date 타입의 값을 기반으로 1970-01-01 00:00:00 시각과의 일자를 int 형으로 반환. unix_timestamp(Timestamp)는 인자로 들어온 Timestamp값을 기반으로 1970-01-01 00:00:00.000 시각과의 간격을 millisecond 단위로 반환함.
 
 ```sql
-SELECT UNIX_DATE(reg_date), unix_timestamp(reg_timestamp) from simple_products emit changes;
+SELECT UNIX_DATE(reg_date), unix_timestamp(reg_timestamp) from simple_products;
 ```
 
 ### int/long형 일자/millisecond초단위 값을 Date/Timestamp 타입 값으로 변환
@@ -185,7 +191,7 @@ SELECT UNIX_DATE(reg_date), unix_timestamp(reg_timestamp) from simple_products e
 - from_days(days)는 인자로 들어온 int형의 days를 기준으로(주로 Unix Time값)으로 date로 변환. from_unixtime(milliseconds)는 인자로 들어온 long int형의 milliseconds 단위 값(주로 Unix Time)을 Timestamp로 변환.
 
 ```sql
-SELECT from_days(UNIX_DATE(reg_date)), reg_date, from_unixtime(unix_timestamp(reg_timestamp)), reg_timestamp from simple_products emit changes;
+SELECT from_days(UNIX_DATE(reg_date)), reg_date, from_unixtime(unix_timestamp(reg_timestamp)), reg_timestamp from simple_products;
 ```
 
 ### 현재 일자/시간 표현과 두개의 Date 또는 Timestamp 값 사이의 기간 구하기
@@ -193,13 +199,13 @@ SELECT from_days(UNIX_DATE(reg_date)), reg_date, from_unixtime(unix_timestamp(re
 - 현재 일자 및 시간 가져 오기. KSQL은 현재일자/시간을 가지는 별도의 속성을 지원하지 않으면 DATE/TIMESTAMP를 UTC 기반의 int/long int로 변환하는 UNIX_DATE(), UNIX_TIMESTAMP() 함수에 아무 인자를 넣지 않았을 때 현재 일자/시간을 int/long int로 가져오고 이를 다시 from_days()/from_timestamp()로 변환해야함. .
 
 ```sql
-select from_days(unix_date()), from_unixtime(unix_timestamp()) from simple_products emit changes limit 1;
+select from_days(unix_date()), from_unixtime(unix_timestamp()) from simple_products limit 1;
 ```
 
 - 두개의 Date 값 사이의 일자 기간 구하기.  KSQLDB는 Interval을 지원하지 않음.  현재일자에서 특정 일자 사이의 기간을 구하기위해서는 unix_date()으로 UTC로 변환된 일자값의 차이를 구하면 됨.
 
 ```sql
-select product_name, reg_date, unix_date() - unix_date(reg_date) from simple_products emit changes;
+select product_name, reg_date, unix_date() - unix_date(reg_date) from simple_products ;
 ```
 
 - 두개의 Timestamp 값 사이의 시간 구하기.  unix_timestamp는 millisecond 단위의 UTC를 반환함.
@@ -207,7 +213,7 @@ select product_name, reg_date, unix_date() - unix_date(reg_date) from simple_pro
 두 UTC 사이의 차이를 1000으로 나누면 초단위, 다시 이를 3600으로 나누면 시간 단위 기간이 됨. 
 
 ```sql
-select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 from simple_products emit change
+select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 from simple_products;
 ```
 
 ### Date/Time/Timestamp 값의 기간 Add/Subtract
@@ -217,14 +223,14 @@ select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 from simple_
 
 ```sql
 select product_name, reg_date, dateadd(days, 2, reg_date) as added_date,
-       datesub(days, 2, reg_date) as subtracted_date from simple_products emit changes;
+       datesub(days, 2, reg_date) as subtracted_date from simple_products;
 
 select product_name, reg_time, timeadd(hours, 2, reg_time) as added_time,
-       timesub(hours, 2, reg_time) as substracted_time from simple_products emit changes;
+       timesub(hours, 2, reg_time) as substracted_time from simple_products;
 
 select product_name, reg_timestamp, timestampadd(days, 2, reg_timestamp) as added_ts01,
        timestampsub(days, 2, reg_timestamp) as substracted_t2,
-       timestampadd(hours, 3, reg_timestamp) as added_ts02 from simple_products emit changes;
+       timestampadd(hours, 3, reg_timestamp) as added_ts02 from simple_products;
 
 ```
 
