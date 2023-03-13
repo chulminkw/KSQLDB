@@ -39,7 +39,6 @@ print customer_activity_stream;
 
 ### Aggregation과 Group by의 적용
 
-- Stream/Table의 aggregation/group by 연산은 rocksdb에서 수행이 됨.
 - aggregate 함수를 사용시 반드시 group by와 함께 적용되어야 함. 전체 테이블에 group by 미 적용 후 aggregate 함수 적용은 허용하지 않음.
 
 ```sql
@@ -56,6 +55,26 @@ select count(*) as cnt from customer_activity_stream group by 1 emit changes;
 SELECT ACTIVITY_TYPE, COUNT(*) AS CNT, SUM(ACTIVITY_POINT) AS SUM_P,
 , AVG(ACTIVITY_POINT) AS AVG_P, MAX(ACTIVITY_POINT) AS MAX_P, MIN(ACTIVITY_POINT) AS MIN_P FROM CUSTOMER_ACTIVITY_STREAM GROUP BY ACTIVITY_TYPE EMIT CHANGES;
 
+```
+
+### earliest_by_offset과 latest_by_offset aggregation 함수
+
+- latest_by_offset(col1) group by col은 group by절 col으로 가장 최근 offset을 가지는 col1 값을 추출. 반대로 earliest_by_offset(col) group by col은 group by 절 col으로 가장 처음 offset을 가지는 col1값을 추출.
+
+```sql
+select customer_id, latest_by_offset(activity_type) as latest_act_type 
+from customer_activity_stream group by customer_id emit changes;
+
+select customer_id, latest_by_offset(activity_type, 2) as latest_act_type 
+from customer_activity_stream group by customer_id emit changes;
+
+select activity_type, max(activity_seq) max_act_id, 
+                      latest_by_offset(activity_seq) as latest_act_seq from customer_activity_stream group by activity_type emit changes;
+
+select 
+
+select customer_id, earliest_by_offset(activity_type) as earliest_act_type 
+from customer_activity_stream group by customer_id emit changes;
 ```
 
 ### Stream또는 Table에 따라 제약되는 Aggregation 함수
