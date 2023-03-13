@@ -26,23 +26,6 @@ INSERT INTO customer_activity_stream (customer_id, activity_seq, activity_type, 
 INSERT INTO customer_activity_stream (customer_id, activity_seq, activity_type, activity_point) VALUES (4, 1,'mobile_open',0.33);
 ```
 
-```bash
-CREATE table simple_products_table (
-  product_id VARCHAR PRIMARY KEY,
-  product_name VARCHAR,
-  category VARCHAR,
-  price DECIMAL(10,2),
-  reg_date DATE,
-  reg_time TIME,
-  reg_timestamp TIMESTAMP
-) WITH (
-  KAFKA_TOPIC = 'simple_products_topic',
-  KEY_FORMAT = 'KAFKA',
-  VALUE_FORMAT = 'JSON'
-);
-
-```
-
 - stream 조회 및 topic 내용 조회
 
 ```sql
@@ -52,13 +35,6 @@ set 'auto.offset.reset'='earliest';
 
 print customer_activity_stream;
 
-```
-
-- where 조건의 적용. = 와 in 연산자
-
-```sql
-select * from customer_activity_stream where activity_type = 'deposit';
-select * from customer_activity_stream where activity_type in ('web_open', 'mobile_open');
 ```
 
 ### Aggregation과 Group by의 적용
@@ -108,6 +84,8 @@ CREATE table simple_products_table (
 ```bash
 select count(*) as cnt, count_distinct(category) as cnt_cat from simple_products_table group by 1 emit changes;
 ```
+
+### Group by시 Rocksdb의 사용.
 
 - Stream/Table의 aggregation/group by 연산은 rocksdb에서 수행이 됨.
 - Stream에 ksql로 group by 를 사용하면 임시 내부 토픽으로 -xxx-GroupBy-repartion과-xxx-Aggregate-Materialize-changelog이 생성됨. 개별 내부 토픽은 stream이 가지는 파티션 수와 동일한 파티션을 가지게 됨.  rocksdb역시 aggregation/group by 를 위해 동작.
@@ -162,6 +140,26 @@ ls -lrt
 ### Group by 절에 여러개의 컬럼들이 있을 경우
 
 - Group by 절에 기술된 컬럼은 Group by 로 수행 되는 SQL 결과 집합의 PK가 됨.  이때 여러개의 컬럼들로 PK가 될 수 있음.
+
+### 가공된 Group by 절의 사용
+
+- group by 절을 가공된 컬럼값으로 적용할 경우 KSQL 출력상으로는 잘못된 값이 출력 되는 것으로 보일 수 있지만 CTAS로 MVIEW를 생성하여 확인하면 정상 출력 됨.
+
+```sql
+select case when category is null then 'etc' else category end as category,
+       count(*) as cnt from simple_products 
+group by case when category is null then 'etc' else category end emit changes;
+```
+
+- CTAS로 MVIEW생성하여 출력 확인
+
+```sql
+create table category_count_mv01 
+as
+select case when category is null then 'etc' else category end as category,
+       count(*) as cnt from simple_products 
+group by case when category is null then 'etc' else category end emit changes;
+```
 
 ### Materialized View의 적용 - Stream.
 
