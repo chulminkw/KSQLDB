@@ -142,7 +142,7 @@ select product_name, coalesce(category, 'etc') as category from simple_products 
 
 ### Case when 구문
 
-- case when 구문은 잘 동작함.
+- case when 구문 실습
 
 ```sql
 select product_name,
@@ -156,7 +156,7 @@ select product_name, price,
 from simple_products;
 ```
 
-### Temporal 타입(Data/Time/Timestamp) 변환
+### Temporal 타입(Date/Time/Timestamp) 변환
 
 - format_date()와 format_timestamp()를 Date와 Timestamp 타입을 문자열로 변환.
 
@@ -178,7 +178,7 @@ select product_name, format_date(reg_date, 'MM/dd, yyyy') as reg_date_str,
 from simple_products;
 ```
 
-### Date/Timestamp 타입 값을 int/long형 Unix Time값으로 변환
+### Date/Timestamp 타입 값을 int/big int형 Unix Time값으로 변환
 
 - unix_date(Date)는 인자로 들어온 Date 타입의 값을 기반으로 1970-01-01 00:00:00 시각과의 일자를 int 형으로 반환. unix_timestamp(Timestamp)는 인자로 들어온 Timestamp값을 기반으로 1970-01-01 00:00:00.000 시각과의 간격을 millisecond 단위로 반환함.
 
@@ -186,34 +186,12 @@ from simple_products;
 SELECT UNIX_DATE(reg_date), unix_timestamp(reg_timestamp) from simple_products;
 ```
 
-### int/long형 일자/millisecond초단위 값을 Date/Timestamp 타입 값으로 변환
+### int/big int형 일자/millisecond초단위 값을 Date/Timestamp 타입 값으로 변환
 
-- from_days(days)는 인자로 들어온 int형의 days를 기준으로(주로 Unix Time값)으로 date로 변환. from_unixtime(milliseconds)는 인자로 들어온 long int형의 milliseconds 단위 값(주로 Unix Time)을 Timestamp로 변환.
+- from_days(days)는 인자로 들어온 int형의 days를 기준으로(주로 Unix Time값)으로 date로 변환. from_unixtime(milliseconds)는 인자로 들어온 big int형의 milliseconds 단위 값(주로 Unix Time)을 Timestamp로 변환.
 
 ```sql
 SELECT from_days(UNIX_DATE(reg_date)), reg_date, from_unixtime(unix_timestamp(reg_timestamp)), reg_timestamp from simple_products;
-```
-
-### 현재 일자/시간 표현과 두개의 Date 또는 Timestamp 값 사이의 기간 구하기
-
-- 현재 일자 및 시간 가져 오기. KSQL은 현재일자/시간을 가지는 별도의 속성을 지원하지 않으면 DATE/TIMESTAMP를 UTC 기반의 int/long int로 변환하는 UNIX_DATE(), UNIX_TIMESTAMP() 함수에 아무 인자를 넣지 않았을 때 현재 일자/시간을 int/long int로 가져오고 이를 다시 from_days()/from_timestamp()로 변환해야함. .
-
-```sql
-select from_days(unix_date()), from_unixtime(unix_timestamp()) from simple_products limit 1;
-```
-
-- 두개의 Date 값 사이의 일자 기간 구하기.  KSQLDB는 Interval을 지원하지 않음.  현재일자에서 특정 일자 사이의 기간을 구하기위해서는 unix_date()으로 UTC로 변환된 일자값의 차이를 구하면 됨.
-
-```sql
-select product_name, reg_date, unix_date() - unix_date(reg_date) from simple_products ;
-```
-
-- 두개의 Timestamp 값 사이의 시간 구하기.  unix_timestamp는 millisecond 단위의 UTC를 반환함.
-
-두 UTC 사이의 차이를 1000으로 나누면 초단위, 다시 이를 3600으로 나누면 시간 단위 기간이 됨. 
-
-```sql
-select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 from simple_products;
 ```
 
 ### Date/Time/Timestamp 값의 기간 Add/Subtract
@@ -233,6 +211,57 @@ select product_name, reg_timestamp, timestampadd(days, 2, reg_timestamp) as adde
        timestampadd(hours, 3, reg_timestamp) as added_ts02 from simple_products;
 
 ```
+
+### 현재 일자/시간 표현과 두개의 Date 또는 Timestamp 값 사이의 기간 구하기
+
+- 현재 일자 및 시간 가져 오기. KSQL은 현재일자/시간을 가지는 별도의 속성을 지원하지 않으면 DATE/TIMESTAMP를 UTC 기반의 int/long int로 변환하는 UNIX_DATE(), UNIX_TIMESTAMP() 함수에 아무 인자를 넣지 않았을 때 현재 일자/시간을 int/long int로 가져오고 이를 다시 from_days()/from_timestamp()로 변환해야함. .
+
+```sql
+select from_days(unix_date()), from_unixtime(unix_timestamp()) from simple_products;
+```
+
+- 두개의 Date 값 사이의 일자 기간 구하기.  KSQLDB는 Interval을 지원하지 않음.  현재일자에서 특정 일자 사이의 기간을 구하기위해서는 unix_date()으로 UTC로 변환된 일자값의 차이를 구하면 됨.
+
+```sql
+select product_name, reg_date, unix_date() - unix_date(reg_date) from simple_products ;
+```
+
+- 두개의 Timestamp 값 사이의 시간 구하기.  unix_timestamp는 millisecond 단위의 UTC를 반환함.
+
+두 UTC 사이의 차이를 1000으로 나누면 초단위, 다시 이를 3600으로 나누면 시간 단위 기간이 됨.  여기서 다시 24를 추가해서 나누면 일자 단위 기간이 됨. 
+
+```sql
+select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 as interval_hour, unix_timestamp() current_bigint , unix_timestamp(reg_timestamp) as reg_bigint, reg_timestamp from simple_products;
+
+select (unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600 as interval_hour,(unix_timestamp() - unix_timestamp(reg_timestamp))/1000/3600/24 as interval_days,  unix_timestamp() current_bigint , unix_timestamp(reg_timestamp) as reg_bigint, reg_timestamp from simple_products;
+```
+
+### Timestamp의 Timezone 변경 및 Kafka 메시지의 전송/저장 시각 Timezone고찰
+
+- unix_timestamp()의 반환은 기본적으로 UTC를 기준으로 함. 이걸 한국 시간으로 변환하려면 CONVERT_TZ(Timestamp, ‘from timezone’, ‘to timezone’)을 이용해서 변환
+
+```bash
+INSERT INTO simple_products ( product_id, product_name, category, price, reg_date, reg_time, reg_timestamp ) 
+VALUES ( 'p008', 'shoes', 'fashion', 226.00, '2023-03-13', '17:36:37', '2023-03-13T17:36:37' );
+
+select from_days(unix_date()) as current_date, convert_tz(from_unixtime(unix_timestamp()), 'UTC', 'Asia/Seoul') as current_ts, product_name, reg_date, reg_time from simple_products;
+
+```
+
+- Kafka의 메시지 전송 시 Header에 메시지 전송시간/또는 Kafka Topic 에 기록된 시간에 대한 정보를 Header에 가지고 있음.
+- 기본적으로 이 Header에 가지는 메시지의 전송 또는 Topic 기록 시간은 UTC Timezone임. 때문에 한국 시간으로 이를 변환하려면 다시 +9:00를 더해 줘야 함
+- 아래 print 토픽명 명령은 Topic에 기록된 메시지 전송시간을 rowtime으로 나타냄
+
+```bash
+print simple_products_topic;
+
+select rowtime, a.* from simple_products a;
+
+select rowtime, from_unixtime(rowtime) as rowts, a.* from simple_products a;
+select rowtime, convert_tz(from_unixtime(rowtime), 'UTC', 'Asia/Seoul') as rowts, a.* from simple_products a;
+```
+
+- 
 
 ### Aggregation 함수
 
