@@ -9,7 +9,7 @@ CREATE STREAM customer_activity_stream (
     ACTIVITY_TYPE VARCHAR,
     ACTIVITY_POINT DOUBLE
    ) WITH (
-    KAFKA_TOPIC = 'customer_activity_stream',
+    KAFKA_TOPIC = 'customer_activity_topic',
     KEY_FORMAT = 'KAFKA',
     VALUE_FORMAT = 'JSON',
     PARTITIONS = 3
