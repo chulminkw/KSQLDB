@@ -295,73 +295,12 @@ select from_unixtime(rowtime) as rowtime, a.*  from simple_user_stream a;
 
 ```
 
-### Stream과 Topic
+### KSQL 수행 시 마다 auto.offset.reset 을 earliest로 자동 설정.
 
-- Stream은 기본적으로 Topic을 기반으로 함.  Stream은 Topic을 기반으로 생성됨.  Stream의 Select는 Topic에서 Consumer client를 통해 메시지를 읽는 것과 동일. Stream의 Insert는 Producer Client를 통해 Topic에 메시지를 기록하는 것과 동일.
-- Stream은 update와 delete operation이 없음. 이는 한번 기록된 Topic 메시지는 삭제 또는 변경을 허용하지 않기 때문임.
-- 아래와 같이 select 명령어를 stream에 수행 후 ksql console 의 로그 메시지를 확인해 보면 Consumer가 생성 후 동작되고 이후 close 됨을 알 수 있음.
+- $CONFLUENT_HOME/etc/ksqldb/ksql-server.properties에 아래 추가
 
-```sql
-select * from simple_user_stream;
-```
-
-- 아래와 같이 insert 명령어를 수행 후 ksql console의 로그 메시지를 확인해 보면 **Producer**가 설정되어 동작함을 알 수 있음.
-
-```sql
-insert into simple_user_stream(id, name, email) values (3, 'test_name_03', 'test_email_03@test.domain');
-```
-
-### Stream 삭제
-
-- Stream은 삭제 될 수 있으며,  삭제 시 Topic과 별도로, 또는 Topic과 함께 삭제 될 수 있음.
-- 아래는 Stream을 삭제하되 Topic은 그대로 유지.  Stream 삭제시 기존 Stream을 위한 Producer등 관련 Resource등이 함께 Close됨을 KSQL 로그 메시지를 통해 확인 할 수 있음.
-
-```sql
-drop stream simple_user_stream;
-
-# 아래는 stream이 없으므로 오류 발생. 
-select * from simple_user_stream;
-
-# 아래는 topic이 여전히 존재하므로 메시지
-print simple_user_stream 
-```
-
-- Stream 삭제시 topic도 함께 삭제하려면 delete topic 절을 사용.  ksqldb 설정에 auto.create.topics.enabled=true로 설정되어 있어야 함.  아래 참조할 것.
-
-[DROP STREAM - ksqlDB Documentation](https://docs.ksqldb.io/en/latest/developer-guide/ksqldb-reference/drop-stream/)
-
-```sql
-drop stream simple_user_stream delete_topic;
-```
-
-- Stream 재생성 후 select 명령어 수행. 이미 Topic에 메시지가 들어있으므로 Select stream은 해당 레코드 출력. 이때 기존 topic이 있더라도 Create Stream 시 with절에 반드시 value_format을 명시해 줘야 함. 아래는 value_format을 명시하지 않아서 오류 발생.
-
-```sql
-//아래는 value_format을 명시하지 않아서 오류 발생. 
-create stream simple_user_stream 
-(
-  id int,
-  name varchar,
-  email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_stream'
-);
-```
-
-- value_format을 기재하여 재 생성.  만약 기존 생성된 Topic을 이용할 때 WITH절에 PARTITION 등을 기술해서는 안됨. 기존 TOPIC의 CONFIG를 변경할 수는 없음.  기존 topic 메시지를 사용하므로 select stream의 레코드가 출력됨.
-
-```sql
-create stream simple_user_stream 
-(
-  id int,
-  name varchar,
-  email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_stream',
-  VALUE_FORMAT ='JSON'
-);
-
-select * from simple_user_stream;
+```bash
+ksql.streams.auto.offset.reset=earliest
 ```
 
 ## Table
@@ -476,6 +415,51 @@ select * from test_user_stream;
 drop stream test_user_stream;
 ```
 
+### 여러개 컬럼들을 PK로 가지는 Table
+
+- Table은 여러개의 컬럼들을 PK로 가질 수 있음.  PK가 여러개의 컬럼을 가질 때 KEY_FORMAT은 KAFKA가 될 수 없으며, JSON 또는 AVRO와 같은 Format이 되어야 함.
+
+```sql
+--아래는 KEY_FORMAT이 'KAFKA' 이므로 오류 발생.  
+create table simple_user_table_mkey
+(
+  cust_id integer primary key,
+  cust_seq integer primary key,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_table',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+--KEY_FORMAT을 JSON으로 설정하여 생성. 
+create table simple_user_table_mkey
+(
+  cust_id integer primary key,
+  cust_seq integer primary key,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_table_mkey',
+  KEY_FORMAT = 'JSON', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+```
+
+- 아래와 같이 데이터를 입력 후 데이터 확인.
+
+```sql
+insert into simple_user_table(cust_id, cust_seq, name, email) values (1, 1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_user_table(cust_id, cust_seq, name, email) values (2, 1, 'test_name_02', 'test_email_02@test.domain');
+
+select * from simple_user_table emit changes;
+
+print simple_user_table_mkey;
+```
+
 ### RocksDB 동작 확인
 
 - Table에 수행되는 push 성 쿼리는 topic→ rocks db를 거치는 쿼리로 수행됨.  table에 push 쿼리를 수행 할 경우 임시성 changelog 토픽이 생성됨.  더불어 rocks db도 함께 기동하여 rocks db 파일도 같이 생성됨.
@@ -491,3 +475,8 @@ ls -lrt
 
 - push 쿼리를 종료하면 임시성 changelog 토픽도 삭제되고 rocksdb 의 파일도 삭제됨.
 - table에 pull 쿼리를 수행하기 위해서는 create table as select … 로 생성된 table만 pull 쿼리가 가능.  create table as 로 생성된 table을 기본으로 materialized 되어 query와 rocks db가 interfrace 연결되므로 pull 쿼리가 수행 가능. 하지만 topic을 직접 소스로 하는 table은 바로 rocks db와 interface 하지 않기에 pull 쿼리 수행 불가.
+- rocksdb의 default state store 저장 디렉토리를 변경.  $CONFLUENT_HOME/etc/ksqldb/ksql-server.properties에 아래 추가
+
+```bash
+ksql.streams.state.dir=/home/min/data/kafka-streams
+```
