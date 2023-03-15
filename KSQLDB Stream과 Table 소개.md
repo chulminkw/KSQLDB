@@ -428,7 +428,7 @@ create table simple_user_table_mkey
   name varchar,
   email varchar
 ) with (
-  KAFKA_TOPIC = 'simple_user_table',
+  KAFKA_TOPIC = 'simple_user_table_mkey',
   KEY_FORMAT = 'KAFKA', 
   VALUE_FORMAT ='JSON',
   PARTITIONS = 1
@@ -452,12 +452,14 @@ create table simple_user_table_mkey
 - 아래와 같이 데이터를 입력 후 데이터 확인.
 
 ```sql
-insert into simple_user_table(cust_id, cust_seq, name, email) values (1, 1, 'test_name_01', 'test_email_01@test.domain');
-insert into simple_user_table(cust_id, cust_seq, name, email) values (2, 1, 'test_name_02', 'test_email_02@test.domain');
+insert into simple_user_table_mkey(cust_id, cust_seq, name, email) values (1, 1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_user_table_mkey(cust_id, cust_seq, name, email) values (2, 1, 'test_name_02', 'test_email_02@test.domain');
 
-select * from simple_user_table emit changes;
+select * from simple_user_table_mkey emit changes;
 
 print simple_user_table_mkey;
+
+drop table simple_user_table_mkey delete topic;
 ```
 
 ### RocksDB 동작 확인
