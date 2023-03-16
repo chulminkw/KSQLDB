@@ -346,7 +346,7 @@ describe simple_user_table extended;
 
 - primary key가 null인 경우 insert 수행 시 오류
 
-```bash
+```sql
 insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
 insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
 
@@ -384,6 +384,14 @@ insert into simple_user_table(id, name, email) values (1, 'new_test_name_01', 'n
 insert into simple_user_table(id, name, email) values (2, 'new_test_name_02', 'new_test_email_02@test.domain');
 ```
 
+```sql
+insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
+
+--primary key가 null인 경우 insert 수행 되지 않음. 
+insert into simple_user_table(name, email) values ('test_name_03', 'test_email_03@test.domain');
+```
+
 - 하지만 select 로 조회 시 id가 1인 레코드는 하나만 추출됨 id가 1인 레코드가 2인 레코드 보다 나중에 나옴에 유의. id가 1인 레코드가 나중에 다시 입력 되었으므로 select 조회시 마치 upsert와 같이 기존 id가 1인 레코드중 가장 최근(나중)에 입력된 데이터로 대체됨.
 
 ```sql
@@ -413,6 +421,50 @@ create stream test_user_stream
 select * from test_user_stream;
 
 drop stream test_user_stream;
+```
+
+### Topic을 소스로 가지는 Table에서 RocksDB 동작 메커니즘
+
+- 기존 Table을 삭제하고 다시 데이터 입력
+
+```sql
+drop table simple_user_table delete topic;
+
+create table simple_user_table
+(
+  id integer primary key,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_table',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
+-- 중복 데이터 입력
+insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
+
+```
+
+- Table에 수행되는 push 성 쿼리는 topic→ rocks db를 거치는 쿼리로 수행됨.  table에 push 쿼리를 수행 할 경우 임시성 changelog 토픽이 생성됨.  더불어 rocks db도 함께 기동하여 rocks db 파일도 같이 생성됨.
+
+```sql
+cd ~/data/kafka-logs
+ls -lrt *changelog*
+_confluent-ksql-default_transient_transient_SIMPLE_USER_TABLE_760213148581098427_1675233045633-KsqlTopic-Reduce-changelog-0
+
+cd /tmp/kafka-streams
+ls -lrt
+```
+
+- push 쿼리를 종료하면 임시성 changelog 토픽도 삭제되고 rocksdb 의 파일도 삭제됨.
+- rocksdb의 default state store 저장 디렉토리를 변경.  $CONFLUENT_HOME/etc/ksqldb/ksql-server.properties에 아래 추가
+
+```bash
+ksql.streams.state.dir=/home/min/data/kafka-streams
 ```
 
 ### 여러개 컬럼들을 PK로 가지는 Table
@@ -460,25 +512,4 @@ select * from simple_user_table_mkey emit changes;
 print simple_user_table_mkey;
 
 drop table simple_user_table_mkey delete topic;
-```
-
-### RocksDB 동작 확인
-
-- Table에 수행되는 push 성 쿼리는 topic→ rocks db를 거치는 쿼리로 수행됨.  table에 push 쿼리를 수행 할 경우 임시성 changelog 토픽이 생성됨.  더불어 rocks db도 함께 기동하여 rocks db 파일도 같이 생성됨.
-
-```sql
-cd ~/data/kafka-logs
-ls -lrt *changelog*
-_confluent-ksql-default_transient_transient_SIMPLE_USER_TABLE_760213148581098427_1675233045633-KsqlTopic-Reduce-changelog-0
-
-cd /tmp/kafka-streams
-ls -lrt
-```
-
-- push 쿼리를 종료하면 임시성 changelog 토픽도 삭제되고 rocksdb 의 파일도 삭제됨.
-- table에 pull 쿼리를 수행하기 위해서는 create table as select … 로 생성된 table만 pull 쿼리가 가능.  create table as 로 생성된 table을 기본으로 materialized 되어 query와 rocks db가 interfrace 연결되므로 pull 쿼리가 수행 가능. 하지만 topic을 직접 소스로 하는 table은 바로 rocks db와 interface 하지 않기에 pull 쿼리 수행 불가.
-- rocksdb의 default state store 저장 디렉토리를 변경.  $CONFLUENT_HOME/etc/ksqldb/ksql-server.properties에 아래 추가
-
-```bash
-ksql.streams.state.dir=/home/min/data/kafka-streams
 ```
