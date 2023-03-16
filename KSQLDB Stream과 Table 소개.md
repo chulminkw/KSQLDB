@@ -445,7 +445,7 @@ create table simple_user_table
 insert into simple_user_table(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
 insert into simple_user_table(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
 -- 중복 데이터 입력
-insert into simple_user_table(id, name, email) values (1, 'new_name_01', 'new_email_01@test.domain');
+insert into simple_user_table(id, name, email) values (1, 'new_test_name_01', 'new_test_email_01@test.domain');
 
 ```
 
