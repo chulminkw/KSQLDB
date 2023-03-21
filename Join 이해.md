@@ -5,6 +5,8 @@
 - simple_user_stream Stream을 재생성.
 
 ```sql
+drop table simple_user_table;
+
 drop stream simple_user_stream delete topic;
 
 create stream simple_user_stream 
@@ -76,128 +78,6 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (4, 1,'mobile_open', 0.45);
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (4, 2,'deposit', 0.34);
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 1,'web_open',0.66);
-```
-
-### 조인시 Co-partitioning 제약 조건
-
-- 조인되는 두개의 Stream/Table은 동일한 파티션 개수, 동일한 파티션 key 타입, 동일한 파티션 key 분배를 가져야만 정상적인 조인이 가능.
-- 아래와 같이 파티션 개수가 1개인 simple_user_stream_test을 생성.
-
-```sql
-drop stream simple_user_stream_test delete topic;
-
-create stream simple_user_stream_test
-(
-	user_id integer key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_test_topic',
-  KEY_FORMAT = 'KAFKA', 
-  VALUE_FORMAT ='JSON',
-  PARTITIONS = 1
-);
-
-insert into simple_user_stream_test(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
---이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
-insert into simple_user_stream_test(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
-
-select * from simple_user_stream_test;
-```
-
-- simple_user_stream_test과 user_activity_stream을 조인하면 partition 갯수가 맞지 않기 때문에 조인 수행 불가.
-
-```sql
-select a.user_id, a.name, b.*
-from simple_user_stream_test a 
-inner join user_activity_stream b within 1 hours on a.user_id= b.user_id emit changes;
-```
-
-- siple_user_stream_test의 파티션 갯수를 3으로 하되, key 컬럼을 int가 아닌 varchar로 변경
-
-```sql
-drop stream if exists simple_user_stream_test delete topic;
-
-create stream simple_user_stream_test
-(
-	user_id varchar key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_test',
-  KEY_FORMAT = 'KAFKA', 
-  VALUE_FORMAT ='JSON',
-  PARTITIONS = 3
-);
-
-insert into simple_user_stream_test(user_id, name, email) values ('1', 'John', 'test_email_01@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
---이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
-insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tom', 'test_email_05@test.domain');
-insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
-
-select * from simple_user_stream_test;
-```
-
-- simple_user_stream_test과 user_activity_stream을 조인하면  조인키 컬럼 타입이 맞지 않기 때문에 조인 실패
-
-```sql
-select a.user_id, a.name, b.*
-from simple_user_stream_test a 
-inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
-```
-
-- 조인키 컬럼 타입을 변환하여 조인이 가능한 수준이라면 cast() 함수를 이용하여 조인 수행.  만약 user_activity_stream을 생성한지가 오래 되었으면 within 절을 생성된 시점에 맞게 오랜 기간으로 설정할 것.  그렇지 않으면 방금 생성한 simple_user_stream_test와 within 기간이 맞지 않아서 조인 불가함.
-- 아래는 simple_user_stream_test의 id 타입을 cast()를 이용하여 integer로 변환 후 조인.
-
-```sql
-select a.user_id, a.name, b.*
-from simple_user_stream_test a 
-inner join user_activity_stream b within 10 days on cast(a.user_id as integer) = b.user_id emit changes;
-```
-
-- 아래는 user_activity_stream의 user_id타입을 cast()를 이용하여 varchar로 변환 후 조인.
-
-```sql
-select a.user_id, a.name, b.*
-from simple_user_stream_test a 
-inner join user_activity_stream b within 10 days on a.user_id = cast(b.user_id as varchar) emit changes;
-```
-
-- 이렇게 cast()로 조인키 타입을 변경하면 단순히 key값의 타입을 변경하는 것에 그치지 않고, 조인 전에 해당 cast(조인키) 기반으로 repartition이 일어남.  왜냐하면 key값의 타입이 변경되는 key값에 따른 파티션 분배 전략이 달라져야 하기 때문. 예를 들어 문자열 ‘1’과 숫자값 1은 서로 다른 값으로 파티션에 할당되기 때문에 조인전에 repartition을 수행해야함.
-- cast(조인키)로 조인키 변환을 수행하여 조인을 수행할 때 data/kafka-logs에 생기는 임시 topic을 보면 cast()가 적용된 토픽에 대해서 repartition이 발생함을 알 수 있음.
-- stream과 table 조인시에 조인 키 컬럼 타입 변경에 유의가 필요. table의 pk 컬럼은 조인 시 가공되어서는 안되므로 cast() 적용을 반드시 stream쪽 조인 키 컬럼에 적용해야 함.
-
-```sql
--- primary key 컬럼인 id를 varchar 타입으로 새로운 table 생성. 
-create table simple_user_table_test
-(
-	user_id varchar primary key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_test',
-  KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
-  PARTITIONS = 3
-);
-
-select * from simple_user_table emit changes;
-
-select b.user_id b.name, a.* 
-from user_activity_stream a
-inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit changes;
-
--- 아래는 table의 primary key를 가공하여 조인 시도하나 수행 안됨. 
-select b.user_id, b.name, a.* 
-from user_activity_stream a
-inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
 ```
 
 ### join 실습- stream-stream 조인
@@ -373,6 +253,128 @@ from simple_user_table a
 select b.id, b.name, a.user_id, a.user_cnt, a.sum_point
 from user_activity_mv02_tab  a
     join simple_user_table b on a.user_id = b.id emit changes;
+```
+
+### 조인시 Co-partitioning 제약 조건
+
+- 조인되는 두개의 Stream/Table은 동일한 파티션 개수, 동일한 파티션 key 타입, 동일한 파티션 key 분배를 가져야만 정상적인 조인이 가능.
+- 아래와 같이 파티션 개수가 1개인 simple_user_stream_test을 생성.
+
+```sql
+drop stream simple_user_stream_test delete topic;
+
+create stream simple_user_stream_test
+(
+	user_id integer key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_test_topic',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+insert into simple_user_stream_test(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+--이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
+insert into simple_user_stream_test(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
+
+select * from simple_user_stream_test;
+```
+
+- simple_user_stream_test과 user_activity_stream을 조인하면 partition 갯수가 맞지 않기 때문에 조인 수행 불가.
+
+```sql
+select a.user_id, a.name, b.*
+from simple_user_stream_test a 
+inner join user_activity_stream b within 1 hours on a.user_id= b.user_id emit changes;
+```
+
+- siple_user_stream_test의 파티션 갯수를 3으로 하되, key 컬럼을 int가 아닌 varchar로 변경
+
+```sql
+drop stream if exists simple_user_stream_test delete topic;
+
+create stream simple_user_stream_test
+(
+	user_id varchar key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_test',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 3
+);
+
+insert into simple_user_stream_test(user_id, name, email) values ('1', 'John', 'test_email_01@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
+--이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
+insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tom', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
+
+select * from simple_user_stream_test;
+```
+
+- simple_user_stream_test과 user_activity_stream을 조인하면  조인키 컬럼 타입이 맞지 않기 때문에 조인 실패
+
+```sql
+select a.user_id, a.name, b.*
+from simple_user_stream_test a 
+inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
+```
+
+- 조인키 컬럼 타입을 변환하여 조인이 가능한 수준이라면 cast() 함수를 이용하여 조인 수행.  만약 user_activity_stream을 생성한지가 오래 되었으면 within 절을 생성된 시점에 맞게 오랜 기간으로 설정할 것.  그렇지 않으면 방금 생성한 simple_user_stream_test와 within 기간이 맞지 않아서 조인 불가함.
+- 아래는 simple_user_stream_test의 id 타입을 cast()를 이용하여 integer로 변환 후 조인.
+
+```sql
+select a.user_id, a.name, b.*
+from simple_user_stream_test a 
+inner join user_activity_stream b within 10 days on cast(a.user_id as integer) = b.user_id emit changes;
+```
+
+- 아래는 user_activity_stream의 user_id타입을 cast()를 이용하여 varchar로 변환 후 조인.
+
+```sql
+select a.user_id, a.name, b.*
+from simple_user_stream_test a 
+inner join user_activity_stream b within 10 days on a.user_id = cast(b.user_id as varchar) emit changes;
+```
+
+- 이렇게 cast()로 조인키 타입을 변경하면 단순히 key값의 타입을 변경하는 것에 그치지 않고, 조인 전에 해당 cast(조인키) 기반으로 repartition이 일어남.  왜냐하면 key값의 타입이 변경되는 key값에 따른 파티션 분배 전략이 달라져야 하기 때문. 예를 들어 문자열 ‘1’과 숫자값 1은 서로 다른 값으로 파티션에 할당되기 때문에 조인전에 repartition을 수행해야함.
+- cast(조인키)로 조인키 변환을 수행하여 조인을 수행할 때 data/kafka-logs에 생기는 임시 topic을 보면 cast()가 적용된 토픽에 대해서 repartition이 발생함을 알 수 있음.
+- stream과 table 조인시에 조인 키 컬럼 타입 변경에 유의가 필요. table의 pk 컬럼은 조인 시 가공되어서는 안되므로 cast() 적용을 반드시 stream쪽 조인 키 컬럼에 적용해야 함.
+
+```sql
+-- primary key 컬럼인 id를 varchar 타입으로 새로운 table 생성. 
+create table simple_user_table_test
+(
+	user_id varchar primary key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_test',
+  KEY_FORMAT = 'KAFKA', 
+	VALUE_FORMAT ='JSON',
+  PARTITIONS = 3
+);
+
+select * from simple_user_table emit changes;
+
+select b.user_id b.name, a.* 
+from user_activity_stream a
+inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit changes;
+
+-- 아래는 table의 primary key를 가공하여 조인 시도하나 수행 안됨. 
+select b.user_id, b.name, a.* 
+from user_activity_stream a
+inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
 ```
 
 ### 조인 후 Group by 수행 시 이슈
