@@ -9,7 +9,7 @@ drop stream simple_user_stream delete topic;
 
 create stream simple_user_stream 
 (
-	id integer key,
+	user_id integer key,
 	name varchar,
 	email varchar
 ) with (
@@ -19,13 +19,13 @@ create stream simple_user_stream
   PARTITIONS = 3
 );
 
-insert into simple_user_stream(id, name, email) values (1, 'John', 'test_email_01@test.domain');
-insert into simple_user_stream(id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
-insert into simple_user_stream(id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
-insert into simple_user_stream(id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
-insert into simple_user_stream(id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
-insert into simple_user_stream(id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
-insert into simple_user_stream(id, name, email) values (6, 'Michell', 'test_email_06@test.domain');
+insert into simple_user_stream(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_stream(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_stream(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_stream(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+insert into simple_user_stream(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
+insert into simple_user_stream(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
+insert into simple_user_stream(user_id, name, email) values (6, 'Michell', 'test_email_06@test.domain');
 select * from simple_user_stream;
 ```
 
@@ -36,7 +36,7 @@ drop table if exists simple_user_table;
 
 create table simple_user_table
 (
-	id integer primary key,
+	user_id integer primary key,
 	name varchar,
 	email varchar
 ) with (
@@ -88,7 +88,7 @@ drop stream simple_user_stream_test delete topic;
 
 create stream simple_user_stream_test
 (
-	id integer key,
+	user_id integer key,
 	name varchar,
 	email varchar
 ) with (
@@ -98,13 +98,13 @@ create stream simple_user_stream_test
   PARTITIONS = 1
 );
 
-insert into simple_user_stream_test(id, name, email) values (1, 'John', 'test_email_01@test.domain');
-insert into simple_user_stream_test(id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
-insert into simple_user_stream_test(id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
-insert into simple_user_stream_test(id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
 --이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
-insert into simple_user_stream_test(id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
-insert into simple_user_stream_test(id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
 
 select * from simple_user_stream_test;
 ```
@@ -112,9 +112,9 @@ select * from simple_user_stream_test;
 - simple_user_stream_test과 user_activity_stream을 조인하면 partition 갯수가 맞지 않기 때문에 조인 수행 불가.
 
 ```sql
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_stream_test a 
-inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
+inner join user_activity_stream b within 1 hours on a.user_id= b.user_id emit changes;
 ```
 
 - siple_user_stream_test의 파티션 갯수를 3으로 하되, key 컬럼을 int가 아닌 varchar로 변경
@@ -124,7 +124,7 @@ drop stream if exists simple_user_stream_test delete topic;
 
 create stream simple_user_stream_test
 (
-	id varchar key,
+	user_id varchar key,
 	name varchar,
 	email varchar
 ) with (
@@ -134,13 +134,13 @@ create stream simple_user_stream_test
   PARTITIONS = 3
 );
 
-insert into simple_user_stream_test(id, name, email) values ('1', 'John', 'test_email_01@test.domain');
-insert into simple_user_stream_test(id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
-insert into simple_user_stream_test(id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
-insert into simple_user_stream_test(id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('1', 'John', 'test_email_01@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
 --이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
-insert into simple_user_stream_test(id, name, email) values ('5', 'Tom', 'test_email_05@test.domain');
-insert into simple_user_stream_test(id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tom', 'test_email_05@test.domain');
+insert into simple_user_stream_test(user_id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
 
 select * from simple_user_stream_test;
 ```
@@ -148,7 +148,7 @@ select * from simple_user_stream_test;
 - simple_user_stream_test과 user_activity_stream을 조인하면  조인키 컬럼 타입이 맞지 않기 때문에 조인 실패
 
 ```sql
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_stream_test a 
 inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
 ```
@@ -157,17 +157,17 @@ inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes
 - 아래는 simple_user_stream_test의 id 타입을 cast()를 이용하여 integer로 변환 후 조인.
 
 ```sql
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_stream_test a 
-inner join user_activity_stream b within 10 days on cast(a.id as integer) = b.user_id emit changes;
+inner join user_activity_stream b within 10 days on cast(a.user_id as integer) = b.user_id emit changes;
 ```
 
 - 아래는 user_activity_stream의 user_id타입을 cast()를 이용하여 varchar로 변환 후 조인.
 
 ```sql
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_stream_test a 
-inner join user_activity_stream b within 10 days on a.id = cast(b.user_id as varchar) emit changes;
+inner join user_activity_stream b within 10 days on a.user_id = cast(b.user_id as varchar) emit changes;
 ```
 
 - 이렇게 cast()로 조인키 타입을 변경하면 단순히 key값의 타입을 변경하는 것에 그치지 않고, 조인 전에 해당 cast(조인키) 기반으로 repartition이 일어남.  왜냐하면 key값의 타입이 변경되는 key값에 따른 파티션 분배 전략이 달라져야 하기 때문. 예를 들어 문자열 ‘1’과 숫자값 1은 서로 다른 값으로 파티션에 할당되기 때문에 조인전에 repartition을 수행해야함.
@@ -178,7 +178,7 @@ inner join user_activity_stream b within 10 days on a.id = cast(b.user_id as var
 -- primary key 컬럼인 id를 varchar 타입으로 새로운 table 생성. 
 create table simple_user_table_test
 (
-	id varchar primary key,
+	user_id varchar primary key,
 	name varchar,
 	email varchar
 ) with (
@@ -190,14 +190,14 @@ create table simple_user_table_test
 
 select * from simple_user_table emit changes;
 
-select b.id, b.name, a.* 
+select b.user_id b.name, a.* 
 from user_activity_stream a
 inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit changes;
 
 -- 아래는 table의 primary key를 가공하여 조인 시도하나 수행 안됨. 
-select b.id, b.name, a.* 
+select b.user_id, b.name, a.* 
 from user_activity_stream a
-inner join simple_user_table_test b on a.user_id = cast(b.id as integer) emit changes;
+inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
 ```
 
 ### join 실습- stream-stream 조인
