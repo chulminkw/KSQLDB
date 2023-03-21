@@ -60,7 +60,7 @@ CREATE STREAM user_activity_stream (
     ACTIVITY_TYPE VARCHAR,
     ACTIVITY_POINT DOUBLE
    ) WITH (
-    KAFKA_TOPIC = 'user_activity_stream',
+    KAFKA_TOPIC = 'user_activity_stream_topic',
     VALUE_FORMAT = 'JSON',
     PARTITIONS = 3
 );
