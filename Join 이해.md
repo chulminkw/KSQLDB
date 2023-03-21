@@ -257,7 +257,7 @@ from user_activity_mv02_tab  a
 
 ### 조인시 Co-partitioning 제약 조건
 
-- 조인되는 두개의 Stream/Table은 동일한 파티션 개수, 동일한 파티션 key 타입, 동일한 파티션 key 분배를 가져야만 정상적인 조인이 가능.
+- 조인되는 두개의 Stream/Table은 동일한 파티션 개수, 동일한 조인(파티션) key 타입, 동일한 파티션 key 분배를 가져야만 정상적인 조인이 가능.
 - 아래와 같이 파티션 개수가 1개인 simple_user_stream_test을 생성.
 
 ```sql
