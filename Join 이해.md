@@ -433,47 +433,6 @@ from user_activity_stream a
 inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
 ```
 
-### Partition by 키워드로 Stream/Table을 새롭게 Repartition 수행
-
-- Partition by 키워드를 이용하여 기존 Stream/Table을 새롭게 Repartition 수행
-
-```sql
-drop table simple_user_table_test_01 delete topic;
-
-create table simple_user_table_test_01
-(
-	user_id integer primary key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_test_01',
-  KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
-  PARTITIONS = 1
-);
-
-insert into simple_user_table_test_01(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
-insert into simple_user_table_test_01(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
-insert into simple_user_table_test_01(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
-insert into simple_user_table_test_01(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
-insert into simple_user_table_test_01(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
-insert into simple_user_table_test_01(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
-
-```
-
-- CTAS로 신규 Table을 생성할 때 Partition By 를 이용해서 기존 simple_user_table_test_01을 다시 생성.
-
-```sql
-CREATE TABLE simple_user_table_test_rekeyed 
-WITH (PARTITIONS=3) 
-AS 
-SELECT user_id, name, email
-FROM simple_user_table_test_01
-PARTITION BY user_id;
-
-describe simple_user_table_test_rekeyed extended;
-```
-
 ### 파티션 Key컬럼이 아닌 조인 Key로 조인
 
 ### Data 준비
@@ -538,7 +497,7 @@ select * from simple_customers_table emit changes;
   order_status varchar,
   store_id integer
 ) with (
-  KAFKA_TOPIC = 'sale_orders_topic',
+  KAFKA_TOPIC = 'sale_orders_stream_topic',
   KEY_FORMAT = 'KAFKA', 
 	VALUE_FORMAT ='JSON',
   PARTITIONS = 3
@@ -560,27 +519,12 @@ INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, s
 SELECT * FROM sale_orders_stream;
 ```
 
-### 조인 후 Group by 수행 시 이슈
-
-- 조인과 Group by를 같이 수행은 할 수 있지만, 조인을 먼저한 mview에 group by를 적용한 결과와 달라 질 수 있음.
-- 조인과 group by를 하나의 KSQL에 적용하면 조인이 다 되지 않은 상황에서 GROUP BY 가 됨. 즉 특정값과 조인되는 다른 값이 10개라면 이중에 처음 4개만 조인하고 GROUP BY 가 수행되고, 이후 다시 6개가 조인되고 GROUP BY 가 수행되면서 결과가 달라지게 되는 문제가 발생.  때문에 조인과 GROUP BY를 같이 수행해서는 안됨.
-- 특히 GROUP BY에서만 사용할 수 있는 WINDOWS절을 조인과 함께 사용시 원치않는 부작용이 발생할 수 있음.
+- sale_orders_stream과 simple_customers_table 을 Stream-Table 조인 수행.
 
 ```sql
-select a.id, count(*) as cnt, avg(activity_point) as avg_point
-from simple_user_stream a
-inner join user_activity_stream b within 1 hours on a.id= b.user_id
-group by a.id emit changes;
-
--- 만약 사용자의 이름까지 함께 보고 싶다면 SQL은 아래와 같이 사용하면 되나 KSQL은 MAX(a.name)과 같이 문자열에 max()적용을 할 수 없으므로 오류 발생. 
-select a.id, max(a.name) as name, count(*) as cnt, avg(activity_point) as avg_point
-from simple_user_stream a
-inner join user_activity_stream b within 1 hours on a.id= b.user_id
-group by a.id emit changes;
-
--- 아래와 같이 latest_by_offset()을 사용하여 name을 가져옴. 
-select a.id, latest_by_offset(a.name) as name, count(*) as cnt, avg(activity_point) as avg_point
-from simple_user_stream a
-inner join user_activity_stream b within 1 hours on a.id= b.user_id
-group by a.id emit changes;
+select a.*, b.*
+from sale_orders_stream a
+  join simple_customers_table b on a.customer_id = b.customer_id emit changes;
 ```
+
+- cd ~/data/kafka-logs로 이동하여 repartition 내부 토픽이 생성됨을 확인.
