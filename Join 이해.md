@@ -450,7 +450,7 @@ create table simple_customers_table
 ) with (
   KAFKA_TOPIC = 'simple_customers_topic',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 3
 );
 
@@ -479,7 +479,7 @@ create stream sale_orders_stream
 ) with (
   KAFKA_TOPIC = 'sale_orders_stream_topic',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 3
 );
 
