@@ -437,7 +437,7 @@ inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) em
 
 ### Data 준비
 
-- simple_customers_stream Stream을 생성.
+- simple_customers_table Table을 생성.
 
 ```sql
 drop table simple_customers_table delete topic;
