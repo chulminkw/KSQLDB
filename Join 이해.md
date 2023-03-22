@@ -238,7 +238,31 @@ VALUE_FORMAT='JSON'
 as
 select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
 from user_activity_stream
+group by user_id, act```sql
+--ctas mview로 새로운 table 생성. 
+-- 여러개의 컬럼이 Primary Key가 될 경우 KEY_FORMAT은 KAFKA-FORMAT 과 같은 primitive 타입이 될 수가 없으며 JSON Format등으로 설정해야함. 
+create table user_activity_mv02_tab
+with
+(
+-- 아래는 FORMAT='JSON'으로 대체 될 수 있음. 
+KEY_FORMAT='JSON',
+VALUE_FORMAT='JSON'
+)
+as
+select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
 group by user_id, activity_type;
+
+-- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
+from simple_user_table a
+    join user_activity_mv02_tab b on a.user_id = b.user_id emit changes;
+
+--아래는 m레벨의 집합이 조인 선두에 오므로 수행 가능. 
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
+from user_activity_mv02_tab  a
+    join simple_user_table b on a.user_id = b.user_id emit changes;
+```ivity_type;
 
 -- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
 select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
@@ -262,7 +286,22 @@ from simple_user_stream a
 left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
 
 -- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
-insert into simple_user_stream(user_id, name, email) values (7, 'Johny', 'test_email_07@test.domain');
+insert into simple_user_stream(user_id, name, email) values (7, 'Kelly', 'test_email_07@test.domain');
+
+```
+
+- set ‘auto.offset.reset’=’latest’ 설정후 데이터 재 확인
+
+```sql
+set 'auto.offset.reset' = 'earliest';
+
+-- stream to stream outer join 수행. 
+select a.user_id, a.name, b.*
+from simple_user_stream a 
+left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
+
+-- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
+insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_07@test.domain');
 
 ```
 
@@ -273,7 +312,7 @@ select b.user_id, b.name, a.*
 from user_activity_stream a
 left join simple_user_table b on a.user_id= b.user_id emit changes;
 
-INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (8, 1,'web_open',0.56);
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (9, 1,'web_open',0.56);
 ```
 
 - Table-Table Outer Join 수행.
@@ -281,7 +320,7 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 ```sql
 
 select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
-from user_activity_mv02_tab  a
+from user_activity_mv01_tab  a
 left join simple_user_table b on a.user_id = b.user_id emit changes;
 
 ```
