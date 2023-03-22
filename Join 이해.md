@@ -11,9 +11,9 @@ drop stream simple_user_stream delete topic;
 
 create stream simple_user_stream 
 (
-	user_id integer key,
-	name varchar,
-	email varchar
+  user_id integer key,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_topic',
   KEY_FORMAT = 'KAFKA', 
@@ -444,9 +444,9 @@ drop table simple_customers_table delete topic;
 
 create table simple_customers_table
 (
-	customer_id integer primary key,
-	name varchar,
-	email varchar
+  customer_id integer primary key,
+  name varchar,
+  email varchar
 ) with (
   KAFKA_TOPIC = 'simple_customers_topic',
   KEY_FORMAT = 'KAFKA', 
@@ -466,14 +466,14 @@ INSERT INTO simple_customers_table (customer_id, name, email) VALUES(9, 'Norma R
 INSERT INTO simple_customers_table (customer_id, name, email) VALUES(10, 'Gregory Sanchez', 'gregory.sanchez@internalmail');
 ```
 
-- sale_order_stream stream생성.
+- sale_orders_stream stream생성.
 
 ```sql
 create stream sale_orders_stream
 (
-	order_id integer key,
-	order_ts timestamp,
-	customer_id integer,
+  order_id integer key,
+  order_ts timestamp,
+  customer_id integer,
   order_status varchar,
   store_id integer
 ) with (
