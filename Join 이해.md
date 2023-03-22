@@ -238,19 +238,6 @@ VALUE_FORMAT='JSON'
 as
 select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
 from user_activity_stream
-group by user_id, act```sql
---ctas mview로 새로운 table 생성. 
--- 여러개의 컬럼이 Primary Key가 될 경우 KEY_FORMAT은 KAFKA-FORMAT 과 같은 primitive 타입이 될 수가 없으며 JSON Format등으로 설정해야함. 
-create table user_activity_mv02_tab
-with
-(
--- 아래는 FORMAT='JSON'으로 대체 될 수 있음. 
-KEY_FORMAT='JSON',
-VALUE_FORMAT='JSON'
-)
-as
-select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
-from user_activity_stream
 group by user_id, activity_type;
 
 -- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
@@ -293,7 +280,7 @@ insert into simple_user_stream(user_id, name, email) values (7, 'Kelly', 'test_e
 - set ‘auto.offset.reset’=’latest’ 설정후 데이터 재 확인
 
 ```sql
-set 'auto.offset.reset' = 'earliest';
+set 'auto.offset.reset' = 'latest';
 
 -- stream to stream outer join 수행. 
 select a.user_id, a.name, b.*
@@ -301,7 +288,7 @@ from simple_user_stream a
 left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
 
 -- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
-insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_07@test.domain');
+insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_08@test.domain');
 
 ```
 
@@ -322,7 +309,6 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
 from user_activity_mv01_tab  a
 left join simple_user_table b on a.user_id = b.user_id emit changes;
-
 ```
 
 ### 조인시 Co-partitioning 제약 조건
@@ -445,6 +431,133 @@ inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit ch
 select b.user_id, b.name, a.* 
 from user_activity_stream a
 inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
+```
+
+### Partition by 키워드로 Stream/Table을 새롭게 Repartition 수행
+
+- Partition by 키워드를 이용하여 기존 Stream/Table을 새롭게 Repartition 수행
+
+```sql
+drop table simple_user_table_test_01 delete topic;
+
+create table simple_user_table_test_01
+(
+	user_id integer primary key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_test_01',
+  KEY_FORMAT = 'KAFKA', 
+	VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+insert into simple_user_table_test_01(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_table_test_01(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_table_test_01(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_table_test_01(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+insert into simple_user_table_test_01(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
+insert into simple_user_table_test_01(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
+
+```
+
+- CTAS로 신규 Table을 생성할 때 Partition By 를 이용해서 기존 simple_user_table_test_01을 다시 생성.
+
+```sql
+CREATE TABLE simple_user_table_test_rekeyed 
+WITH (PARTITIONS=3) 
+AS 
+SELECT user_id, name, email
+FROM simple_user_table_test_01
+PARTITION BY user_id;
+
+describe simple_user_table_test_rekeyed extended;
+```
+
+### 파티션 Key컬럼이 아닌 조인 Key로 조인
+
+### Data 준비
+
+- imple_customers_stream Stream을 생성.
+
+```sql
+drop stream simple_customers_stream delete topic;
+
+**create stream s**imple_customers_stream 
+(
+	customer_id integer key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_customers_topic',
+  KEY_FORMAT = 'KAFKA', 
+	VALUE_FORMAT ='JSON',
+  PARTITIONS = 3
+);
+
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(1, 'Tammy Bryant', 'tammy.bryant@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(2, 'Roy White', 'roy.white@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(3, 'Gary Jenkins', 'gary.jenkins@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(4, 'Victor Morris', 'victor.morris@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(5, 'Beverly Hughes', 'beverly.hughes@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(6, 'Evelyn Torres', 'evelyn.torres@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(7, 'Carl Lee', 'carl.lee@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(8, 'Douglas Flores', 'douglas.flores@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(9, 'Norma Robinson', 'norma.robinson@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(9, 'Normy Robinson', 'normy.robinson@internalmail');
+INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(10, 'Gregory Sanchez', 'gregory.sanchez@internalmail');
+```
+
+- simple_user_table Table을 생성.
+
+```sql
+drop table if exists simple_customers_table;
+
+**create table s**imple_customers_table 
+(
+	customer_id integer primary key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_customers_topic',
+  KEY_FORMAT = 'KAFKA', 
+	VALUE_FORMAT ='JSON'
+);
+
+select * from simple_customers_table emit changes;
+```
+
+- simple_order_stream 생성.
+
+```sql
+**create stream sale_orders_stream**
+(
+	order_id integer key,
+	order_ts timestamp,
+	customer_id integer,
+  order_status varchar,
+  store_id integer
+) with (
+  KAFKA_TOPIC = 'sale_orders_topic',
+  KEY_FORMAT = 'KAFKA', 
+	VALUE_FORMAT ='JSON',
+  PARTITIONS = 3
+);
+
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(2, '2023-02-08T20:58:10.000', 1, 'COMPLETE', 1);
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(3, '2023-02-08T23:17:07.000', 2, 'COMPLETE', 1);
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(4, '2023-02-09T13:43:36.000', 1, 'COMPLETE', 3);
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(5, '2023-02-11T18:01:30.000', 3, 'COMPLETE', 2);
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(6, '2023-02-11T20:11:48.000', 3, 'COMPLETE', 1);
+INSERT INTO sale_orders_stream (order_id, order_ts, customer_id, order_status, store_id)
+	VALUES(7, '2023-02-22T00:57:11.000', 5, 'COMPLETE', 2);
+
+SELECT * FROM sale_orders_stream;
 ```
 
 ### 조인 후 Group by 수행 시 이슈
