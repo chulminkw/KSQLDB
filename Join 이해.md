@@ -440,11 +440,11 @@ inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) em
 - simple_customers_stream Stream을 생성.
 
 ```sql
-drop stream simple_customers_stream delete topic;
+drop table simple_customers_table delete topic;
 
-**create stream s**imple_customers_stream 
+create table simple_customers_table
 (
-	customer_id integer key,
+	customer_id integer primary key,
 	name varchar,
 	email varchar
 ) with (
@@ -454,42 +454,22 @@ drop stream simple_customers_stream delete topic;
   PARTITIONS = 3
 );
 
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(1, 'Tammy Bryant', 'tammy.bryant@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(2, 'Roy White', 'roy.white@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(3, 'Gary Jenkins', 'gary.jenkins@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(4, 'Victor Morris', 'victor.morris@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(5, 'Beverly Hughes', 'beverly.hughes@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(6, 'Evelyn Torres', 'evelyn.torres@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(7, 'Carl Lee', 'carl.lee@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(8, 'Douglas Flores', 'douglas.flores@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(9, 'Norma Robinson', 'norma.robinson@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(9, 'Normy Robinson', 'normy.robinson@internalmail');
-INSERT INTO simple_customers_stream (customer_id, name, email) VALUES(10, 'Gregory Sanchez', 'gregory.sanchez@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(1, 'Tammy Bryant', 'tammy.bryant@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(2, 'Roy White', 'roy.white@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(3, 'Gary Jenkins', 'gary.jenkins@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(4, 'Victor Morris', 'victor.morris@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(5, 'Beverly Hughes', 'beverly.hughes@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(6, 'Evelyn Torres', 'evelyn.torres@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(7, 'Carl Lee', 'carl.lee@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(8, 'Douglas Flores', 'douglas.flores@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(9, 'Norma Robinson', 'norma.robinson@internalmail');
+INSERT INTO simple_customers_table (customer_id, name, email) VALUES(10, 'Gregory Sanchez', 'gregory.sanchez@internalmail');
 ```
 
-- simple_user_table Table을 생성.
+- sale_order_stream stream생성.
 
 ```sql
-drop table if exists simple_customers_table;
-
-**create table s**imple_customers_table 
-(
-	customer_id integer primary key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_customers_topic',
-  KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON'
-);
-
-select * from simple_customers_table emit changes;
-```
-
-- simple_order_stream 생성.
-
-```sql
-**create stream sale_orders_stream**
+create stream sale_orders_stream
 (
 	order_id integer key,
 	order_ts timestamp,
