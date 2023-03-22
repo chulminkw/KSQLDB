@@ -17,7 +17,7 @@ create stream simple_user_stream
 ) with (
   KAFKA_TOPIC = 'simple_user_topic',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON',
+  VALUE_FORMAT ='JSON',
   PARTITIONS = 3
 );
 
@@ -44,7 +44,7 @@ create table simple_user_table
 ) with (
   KAFKA_TOPIC = 'simple_user_topic',
   KEY_FORMAT = 'KAFKA', 
-	VALUE_FORMAT ='JSON'
+  VALUE_FORMAT ='JSON'
 );
 
 select * from simple_user_table emit changes;
@@ -98,16 +98,16 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 -- 아래는 pull 쿼리로 수행되지 않음. 
 select a.*, b.*
 from simple_user_stream a 
-inner join user_activity_stream b on a.id= b.user_id;
+inner join user_activity_stream b on a.user= b.user_id;
 
 -- 아래는 push 쿼리지만 within 절이 없어서 오류
 select a.*, b.*
 from simple_user_stream a 
-inner join user_activity_stream b on a.id= b.user_id emit changes;
+inner join user_activity_stream b on a.user= b.user_id emit changes;
 
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_stream a 
-inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
+inner join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
 
 ```
 
@@ -122,43 +122,39 @@ inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes
 - stream과 table 조인은 within 절을 적용해서는 안됨.
 
 ```sql
-select b.id, b.name, a.* 
+select b.user_id, b.name, a.* 
 from user_activity_stream a
-inner join simple_user_table b on a.user_id= b.id emit changes;
-
-select b.id, b.name, a.* 
-from user_activity_stream a
-join simple_user_table b on a.user_id= b.id emit changes;
+inner join simple_user_table b on a.user_id= b.user_id emit changes;
 
 -- 아래는 table을 기준으로 stream을 조인하므로 수행되지 않음. 
-select a.id, a.name, b.*
+select a.user_id, a.name, b.*
 from simple_user_table a
-inner join user_activity_stream b on a.id= b.user_id emit changes;
+inner join user_activity_stream b on a.user_id= b.user_id emit changes;
 
 -- 아래는 stream-table 조인 시 within 절을 적용하면 수행되지 않음.  
-select b.id, b.name, a.* 
+select b.user_id, b.name, a.* 
 from user_activity_stream a
-inner join simple_user_table b within 2 hours on a.user_id= b.id emit changes;
+inner join simple_user_table b within 2 hours on a.user_id= b.user_id emit changes;
 ```
 
 - 조인 시 a.* 과 같이 alias와 *를 같이 사용하게 되면 컬럼명을 alias_기존컬럼명으로 만들기 때문에 주의가 필요함. 즉 A_USER_ID, A_ACTIVITY_ID와 같이 만들어짐.
 
 ```sql
-select b.id, b.name, a.* 
+select b.user_id, b.name, a.* 
 from user_activity_stream a
-inner join simple_user_table b on a.user_id= b.id emit changes;
+inner join simple_user_table b on a.user_id= b.user_id emit changes;
 ```
 
-- 조인 결과를 MView로 생성.  Stream→table 조인은 Stream으로 생성되어야 하며, Table로 생성할 수 없음.  with 절에 topic 속성값을 주지 않으면 자동으로 join key값을 key로, topic 명은 Mview명을 가져옴.  partition 갯수는 조인 시 partition 갯수가 같아야 하므로 그대로 적용가능, **만약 replication factor가 서로 다르면 어떻게 적용되는가?**
+- 조인 결과를 MView로 생성.  Stream→table 조인은 Stream으로 생성되어야 하며, Table로 생성할 수 없음.  with 절에 topic 속성값을 주지 않으면 자동으로 join key값을 key로, topic 명은 Mview명을 가져옴.  partition 갯수는 조인 시 partition 갯수가 같아야 하므로 그대로 적용가능,
 
 ```sql
 drop stream if exists user_activity_join_mv delete topic;
 
 create stream user_activity_join_mv
 as
-select b.id, b.name, a.user_id, a.activity_id, a.activity_type, a.activity_point
+select b.user_id, b.name, a.user_id, a.activity_id, a.activity_type, a.activity_point
 from user_activity_stream a
-inner join simple_user_table b on a.user_id= b.id emit changes;
+inner join simple_user_table b on a.user_id= b.user_id emit changes;
 
 -- MView에 pull 쿼리, push 쿼리 모두 가능. 
 select * from user_activity_join_mv;
@@ -222,9 +218,9 @@ from user_activity_stream
 group by user_id;
 
 -- table-table 조인 수행. push 쿼리만 가능. 
-select a.id, a.name, b.user_id, b.user_cnt, b.sum_point
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
 from simple_user_table a
-    join user_activity_mv01_tab b on a.id = b.user_id emit changes;
+    join user_activity_mv01_tab b on a.user_id = b.user_id emit changes;
 ```
 
 - table - table 조인 시 1: 1이 아닌 1:m 조인 수행.  stream - table과 마찬가지로 반드시 m이 되는 테이블이 조인 선두, 1이 되는 집합이 조인 후미에 와야 함.
@@ -245,14 +241,49 @@ from user_activity_stream
 group by user_id, activity_type;
 
 -- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
-select a.id, a.name, b.user_id, b.user_cnt, b.sum_point
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
 from simple_user_table a
-    join user_activity_mv02_tab b on a.id = b.user_id emit changes;
+    join user_activity_mv02_tab b on a.user_id = b.user_id emit changes;
 
 --아래는 m레벨의 집합이 조인 선두에 오므로 수행 가능. 
-select b.id, b.name, a.user_id, a.user_cnt, a.sum_point
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
 from user_activity_mv02_tab  a
-    join simple_user_table b on a.user_id = b.id emit changes;
+    join simple_user_table b on a.user_id = b.user_id emit changes;
+```
+
+### Outer Join
+
+- Stream-Stream Outer Join 수행.
+
+```sql
+-- stream to stream outer join 수행. 
+select a.user_id, a.name, b.*
+from simple_user_stream a 
+left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
+
+-- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
+insert into simple_user_stream(user_id, name, email) values (7, 'Johny', 'test_email_07@test.domain');
+
+```
+
+- Stream-Table Outer Join 수행.
+
+```sql
+select b.user_id, b.name, a.* 
+from user_activity_stream a
+left join simple_user_table b on a.user_id= b.user_id emit changes;
+
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (8, 1,'web_open',0.56);
+```
+
+- Table-Table Outer Join 수행.
+
+```sql
+
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
+from user_activity_mv02_tab  a
+left join simple_user_table b on a.user_id = b.user_id emit changes;
+
 ```
 
 ### 조인시 Co-partitioning 제약 조건
