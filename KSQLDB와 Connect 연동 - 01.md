@@ -45,7 +45,7 @@ http http://localhost:8083/connector-plugins
 
 ### Embedded Connect에서 Datagen Connector 구동 - 01
 
-- datagen_clickstream_user Connector 생성.
+- DGEN_CLICKSTREAM_USERS Connector 생성.
 
 ```sql
 CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
