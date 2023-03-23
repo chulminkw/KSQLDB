@@ -43,7 +43,7 @@ curl –X GET –H “Content-Type: application/json” http://localhost:8083/co
 http http://localhost:8083/connector-plugins
 ```
 
-### Embedded Connect에서 Datagen Connector 구동
+### Embedded Connect에서 Datagen Connector 구동 - 01
 
 - datagen_clickstream_user Connector 생성.
 
