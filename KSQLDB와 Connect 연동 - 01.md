@@ -142,16 +142,66 @@ http http://localhost:8083/connectors
 http http://localhost:8083/connector-plugins
 ```
 
+- ksqldb-server.properties에 기존 embeded connect 설정은 주석처리 하고 ksql.connect.url=http://localhost:8083 설정 저장.
+
+```bash
+vi ksqldb-server.properties
+#ksql.connect.worker.config=/home/min/confluent/etc/ksqldb/connect.properties
+ksql.connect.url=http://localhost:8083
+```
+
+### External 모드 Connect에서 신규 Connector 생성 후 KSQLDB와 연동
+
+### Connector Utility Shell 생성.
+
+- connect에 등록된 connector들 조회 - show_connectors
+
+```sql
+vi show_connectors
+http GET http://localhost:8083/connectors
+
+chmod +x show_connector
+```
+
+- 신규 connector 생성 - register_connector
+
+```sql
+vi register_connector
+/usr/bin/http POST http://localhost:8083/connectors @/home/min/connector_configs/$1
+
+chmod +x register_connector
+```
+
+- 기존 connector 삭제 - delete_connector
+
+```sql
+vi delete_connectors
+http DELETE http://localhost:8083/connectors/$1
+
+chmod +x delete_connector
+```
+
+- topic message 조회 - show_topic_messages
+
+```sql
+vi show_topic_messages
+
+if [ $1 == 'avro' ]
+then
+        kafka-avro-console-consumer --bootstrap-server localhost:9092 --topic $2 --from-beginning --property print.key=true |jq '.'
+
+else
+        kafka-console-consumer --bootstrap-server localhost:9092 --topic $2 --from-beginning --property print.key=true |jq '.'
+
+fi
+
+chmod +x show_topic_messages
+```
+
 - topic 삭제하고 재생성.
 
 ```sql
 kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
-kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
-```
-
-- partition이 3개인 topic 생성.
-
-```sql
 kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
 ```
 
@@ -199,34 +249,6 @@ show_topic_messages json dgen_clickstream_users
     "tasks.max": "1"
   }
 }
-```
-
-### Connector Utility Shell 생성.
-
-- connect에 등록된 connector들 조회 - show_connectors
-
-```sql
-vi show_connectors
-http GET http://localhost:8083/connectors
-
-chmod +x show_connector
-```
-
-- topic message 조회 - show_topic_messages
-
-```sql
-vi show_topic_messages
-
-if [ $1 == 'avro' ]
-then
-        kafka-avro-console-consumer --bootstrap-server localhost:9092 --topic $2 --from-beginning --property print.key=true |jq '.'
-
-else
-        kafka-console-consumer --bootstrap-server localhost:9092 --topic $2 --from-beginning --property print.key=true |jq '.'
-
-fi
-
-chmod +x show_topic_messages
 ```
 
 - user_id를 PK로 하는 clickstream_users 테이블 생성.
