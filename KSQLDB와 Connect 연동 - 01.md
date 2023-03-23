@@ -78,7 +78,7 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic dgen_clickstrea
 - connector 삭제하기
 
 ```sql
-drop connector DGEN_CLICKSTREAM_USERS;
+drop connector DGEN_CLICKSTREAM_USER
 ```
 
 - topic 삭제하기
@@ -106,6 +106,99 @@ CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
   'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
   'value.converter.schemas.enable' = 'true'
 );
+```
+
+### External 모드로 KSQLDB와 연동
+
+- 기존에 Embedded 모드에서 등록한 Connector들은 모두 삭제하고 ksqldb 프로세스 종료
+- External Connect의 환경 설정 파라미터 수정.
+
+```bash
+cd $CONFLUENT_HOME/etc/kafka
+vi connect-distributed.properties
+plugin.path = /home/min/connector_plugins 
+```
+
+- External Connect를 기동하는 스크립트 connect_start.sh과 connect_start_log.sh 생성.
+
+```bash
+vi connect_start.sh
+$CONFLUENT_HOME/bin/connect-distributed $CONFLUENT_HOME/etc/kafka/connect-distributed.properties
+
+vi connect_start_log.sh
+log_suffix=`date +"%Y%m%d%H%M%S"`
+$CONFLUENT_HOME/bin/connect-distributed $CONFLUENT_HOME/etc/kafka/connect-distributed.properties 2>&1 | tee -a ~/connect_console_log/connect_console_$log_suffix.log
+
+mkdir connect_console_log
+chmod +x *.sh
+```
+
+- External Connect를 기동하고 정상 기동 확인
+
+```bash
+connect_start.sh
+
+http http://localhost:8083/connectors
+http http://localhost:8083/connector-plugins
+```
+
+- topic 삭제하고 재생성.
+
+```sql
+kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
+```
+
+- partition이 3개인 topic 생성.
+
+```sql
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
+```
+
+- 아래와 같은 설정으로 dgen_clickstream_users.json 파일을 생성.
+
+```json
+
+{
+  "name": "dgen_clickstream_users",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstream_users",
+    "quickstart": "CLICKSTREAM_USERS",
+    "max.interval": 500,
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.converters.IntegerConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "true"
+  }
+}
+```
+
+- dgen_clickstream_users connector 생성 등록 및 topic 메시지 확인
+
+```bash
+register_connector dgen_clickstream_users.json
+show_connectors
+
+show_topic_messages json dgen_clickstream_users
+```
+
+- Click Stream 데이터를 위한 Streams 생성. Key는 String, Vlaue는 Json형태로 생성.
+
+```json
+{
+  "name": "dgen_clickstreams",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstreams",
+    "quickstart": "clickstream",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "max.interval": 1000,
+    "tasks.max": "1"
+  }
+}
 ```
 
 ### Connector Utility Shell 생성.
