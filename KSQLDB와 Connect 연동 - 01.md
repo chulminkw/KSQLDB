@@ -48,14 +48,14 @@ http http://localhost:8083/connector-plugins
 - datagen_clickstream_user Connector 생성.
 
 ```sql
-CREATE SOURCE CONNECTOR IF NOT EXISTS DATAGEN_CLICKSTREAM_USERS WITH (
+CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
   'connector.class'          = 'io.confluent.kafka.connect.datagen.DatagenConnector',
   'kafka.topic'              = 'dgen_clickstream_users',
   'quickstart'               = 'CLICKSTREAM_USERS',
-  'maxInterval'              = '500',
-  'iterations'               = '200',
+  'max.interval'              = '500',
+  'iterations'                = '1000',
   'tasks.max'                = '1',
-  'key.converter'            = 'org.apache.kafka.connect.storage.StringConverter',
+  'key.converter'            = 'org.apache.kafka.connect.converters.IntegerConverter',
   'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
   'value.converter.schemas.enable' = 'true'
 );
@@ -79,7 +79,7 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic dgen_clickstrea
 - connector 삭제하기
 
 ```sql
-drop connector DATAGEN_CLICKSTREAM_USERS;
+drop connector DGEN_CLICKSTREAM_USERS;
 ```
 
 - topic 삭제하기
@@ -97,7 +97,17 @@ kafka-topic --bootstrap-server localhost:9092 --create --topic dgen_clickstream_
 - connector 재생성.
 
 ```sql
-kafka-topic --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
+CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
+  'connector.class'          = 'io.confluent.kafka.connect.datagen.DatagenConnector',
+  'kafka.topic'              = 'dgen_clickstream_users',
+  'quickstart'               = 'CLICKSTREAM_USERS',
+  'max.interval'              = '500',
+  'iterations'                = '1000',
+  'tasks.max'                = '1',
+  'key.converter'            = 'org.apache.kafka.connect.converters.IntegerConverter',
+  'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
+  'value.converter.schemas.enable' = 'true'
+);
 ```
 
 ### Connector Utility Shell 생성.
