@@ -233,25 +233,26 @@ show_connectors
 show_topic_messages json dgen_clickstream_users
 ```
 
-- Click Stream 데이터를 위한 Streams 생성. Key는 String, Vlaue는 Json형태로 생성.
+- ksqldb에서 Connector 확인/삭제/생성 관리
 
-```json
-{
-  "name": "dgen_clickstreams",
-  "config": {
-    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
-    "kafka.topic": "dgen_clickstreams",
-    "quickstart": "clickstream",
-    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "false",
-    "max.interval": 1000,
-    "tasks.max": "1"
-  }
-}
+```sql
+SHOW CONNECTORS;
+
+drop connector dgen_clickstream_users;
+
+CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
+  'connector.class'          = 'io.confluent.kafka.connect.datagen.DatagenConnector',
+  'kafka.topic'              = 'dgen_clickstream_users',
+  'quickstart'               = 'CLICKSTREAM_USERS',
+  'max.interval'              = '500',
+  'tasks.max'                = '1',
+  'key.converter'            = 'org.apache.kafka.connect.converters.IntegerConverter',
+  'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
+  'value.converter.schemas.enable' = 'true'
+);
 ```
 
-- user_id를 PK로 하는 clickstream_users 테이블 생성.
+### ClickStream 생성 및 Stream과 Table 생성.
 
 ```sql
 CREATE TABLE clickstream_users (
