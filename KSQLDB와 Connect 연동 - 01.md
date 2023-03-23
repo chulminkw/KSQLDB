@@ -53,7 +53,6 @@ CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
   'kafka.topic'              = 'dgen_clickstream_users',
   'quickstart'               = 'CLICKSTREAM_USERS',
   'max.interval'              = '500',
-  'iterations'                = '1000',
   'tasks.max'                = '1',
   'key.converter'            = 'org.apache.kafka.connect.converters.IntegerConverter',
   'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
@@ -85,13 +84,13 @@ drop connector DGEN_CLICKSTREAM_USERS;
 - topic 삭제하기
 
 ```sql
-kafka-topic --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
+kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
 ```
 
 - partition이 3개인 topic 생성.
 
 ```sql
-kafka-topic --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users --partitions 3
 ```
 
 - connector 재생성.
@@ -102,7 +101,6 @@ CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
   'kafka.topic'              = 'dgen_clickstream_users',
   'quickstart'               = 'CLICKSTREAM_USERS',
   'max.interval'              = '500',
-  'iterations'                = '1000',
   'tasks.max'                = '1',
   'key.converter'            = 'org.apache.kafka.connect.converters.IntegerConverter',
   'value.converter'          = 'org.apache.kafka.connect.json.JsonConverter',
