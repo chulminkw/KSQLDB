@@ -238,7 +238,7 @@ show_topic_messages json dgen_clickstream_users
 ```sql
 SHOW CONNECTORS;
 
-drop connector dgen_clickstream_users;
+drop connector "dgen_clickstream_users";
 
 CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
   'connector.class'          = 'io.confluent.kafka.connect.datagen.DatagenConnector',
@@ -252,60 +252,224 @@ CREATE SOURCE CONNECTOR IF NOT EXISTS DGEN_CLICKSTREAM_USERS WITH (
 );
 ```
 
-### ClickStream 생성 및 Stream과 Table 생성.
+### ClickStream 데이터 생성을 위한 Datagen Connector 생성.
+
+- Click Stream 데이터를 위한 Streams 생성. Key는 String, Value는 Json형태로 생성.  converter schema는 disable 설정(즉 value의 schema정보는 메시지로 생성하지 않음)
 
 ```sql
+-- 기존에 dgen_clickstreams topic이 있으면 삭제. 
+kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstreams_topic
+
+-- partition의 갯수가 3인 topic dgen_clickstreams 생성.
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstreams_topic --partitions 3 
+```
+
+```json
+{
+  "name": "dgen_clickstreams",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstreams_topic",
+    "quickstart": "clickstream",
+    "max.interval": 1000,
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false"
+  }
+}
+```
+
+### ClickStream 생성 및 Stream과 Table 생성.
+
+- dgen_clickstreams_topic에 기반한 clickstreams Stream 생성
+
+```sql
+CREATE STREAM clickstreams (
+  ip VARCHAR KEY,
+  userid INTEGER,
+  remote_user VARCHAR,
+  time VARCHAR, 
+  _time INTEGER,
+  request VARCHAR,
+  status VARCHAR,
+  bytes VARCHAR,
+  referer VARCHAR,
+  agent VARCHAR
+)
+WITH (
+KAFKA_TOPIC = 'dgen_clickstreams_topic',
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON'
+);
+
+select * from clickstreams limit 5;
+```
+
+- 아래와 같이 Json Value의 일부 컬럼들만 Stream/Table 컬럼으로 설정 가능.
+
+```sql
+CREATE STREAM clickstreams_small (
+  ip VARCHAR KEY,
+  userid INTEGER,
+  _time INTEGER,
+  request VARCHAR,
+  status VARCHAR,
+  agent VARCHAR
+)
+WITH (
+KAFKA_TOPIC = 'dgen_clickstreams_topic',
+KEY_FORMAT = 'KAFKA',
+VALUE_FORMAT = 'JSON'
+);  
+
+select * from clickstreams_small limit 5;
+```
+
+- dgen_clickstream_users Connector 재 생성. 기존 topic 명을 dgen_clickstream_users_topic으로 변경.
+
+```sql
+kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users_topic --partitions 3
+```
+
+- 아래 설정으로 dgen_clickstream_users.json 변경.
+
+```sql
+{
+  "name": "dgen_clickstream_users",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstream_users_topic",
+    "quickstart": "CLICKSTREAM_USERS",
+    "max.interval": 1000,
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.converters.IntegerConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}
+```
+
+- clickstream_users Table 재 생성.
+
+```sql
+print dgen_clickstream_users limit 3;
+
 CREATE TABLE clickstream_users (
-  user_id VARCHAR PRIMARY KEY,
+  user_id INTEGER PRIMARY KEY,
+  username VARCHAR,
   registered_At BIGINT,
   first_name VARCHAR,
   last_name VARCHAR,
   city VARCHAR,
   level VARCHAR
 ) WITH (
-  KAFKA_TOPIC = 'dgen_clickstream_users_avro',
-  VALUE_FORMAT = 'AVRO',
-  PARTITIONS = 1
+  KAFKA_TOPIC = 'dgen_clickstream_users_topic',
+  VALUE_FORMAT = 'JSON'
 );
+
+select * from clickstream_users emit changes limit 3;
 ```
 
-- clickstream connector 생성
+- value.converter.schemas.enable을 false로 설정하여 dgen_clickstream_users.json 변경. 먼저 기존 Table과 topic을 삭제하고 topic 재 생성. connector 도 drop
 
 ```sql
-CREATE SOURCE CONNECTOR IF NOT EXISTS DATAGEN_CLICKSTREAM WITH (
-  'connector.class'          = 'io.confluent.kafka.connect.datagen.DatagenConnector',
-  'kafka.topic'              = 'dgen_clickstream_avro',
-  'quickstart'               = 'CLICKSTREAM',
-  'maxInterval'              = '5000',
-  'tasks.max'                = '1',
-  'value.converter'       = 'io.confluent.connect.avro.AvroConverter',
-  'value.converter.schema.registry.url' = 'http://localhost:8081'
-);
+drop table clickstream_users delete topic;
+drop connector "dgen_clickstream_users";
 ```
 
-- clickstream stream 생성.
+```sql
+kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users_topic --partitions 3
+```
+
+```json
+{
+  "name": "dgen_clickstream_users",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstream_users_topic",
+    "quickstart": "CLICKSTREAM_USERS",
+    "max.interval": 500,
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.converters.IntegerConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}
+```
+
+- clickstream_users Table 재 생성 후 데이터 확인. .
 
 ```sql
-CREATE STREAM clickstream (
-  ip VARCHAR,
-  userid INT,
+print dgen_clickstream_users limit 3;
+
+CREATE TABLE clickstream_users (
+  user_id INTEGER PRIMARY KEY,
+  username VARCHAR,
+  registered_At BIGINT,
+  first_name VARCHAR,
+  last_name VARCHAR,
+  city VARCHAR,
+  level VARCHAR
+) WITH (
+  KAFKA_TOPIC = 'dgen_clickstream_users_topic',
+  VALUE_FORMAT = 'JSON'
+);
+
+select * from clickstream_users emit changes limit 3;
+```
+
+### Avro 포맷으로 KSQLDB Stream/Table 생성.
+
+- 아래와 같은 설정으로 dgen_clickstreams_avro.json 을 생성하고 connector 생성.
+
+```json
+{
+  "name": "dgen_clickstreams_avro",
+  "config": {
+    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
+    "kafka.topic": "dgen_clickstreams_topic_avro",
+    "quickstart": "clickstream",
+    "max.interval": 1000,
+    "tasks.max": "1",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://localhost:8081",
+    "value.converter.schema.registry.url": "http://localhost:8081"
+  }
+}
+```
+
+- dgen_clickstreams_topic_avro에 기반한 clickstreams Stream 생성
+
+```sql
+--_time은 int64-> int32 Serialization 이슈로 BIGINT로 변경.
+CREATE STREAM clickstreams_avro (
+  ip VARCHAR KEY,
+  userid INTEGER,
   remote_user VARCHAR,
-  time VARCHAR,  
+  time VARCHAR, 
   _time BIGINT,
   request VARCHAR,
   status VARCHAR,
   bytes VARCHAR,
   referer VARCHAR,
   agent VARCHAR
-) WITH (
-  KAFKA_TOPIC = 'dgen_clickstream_avro',
-  VALUE_FORMAT = 'AVRO',
-  PARTITIONS = 1
+)
+WITH (
+KAFKA_TOPIC = 'dgen_clickstreams_topic_avro',
+KEY_FORMAT = 'AVRO',
+VALUE_FORMAT = 'AVRO'
 );
+
+select * from clickstreams_avro limit 5;
 ```
 
-- 아래와 같이 Embeded Connector 생성 스크립트를 ksqldb에서 수행.
+- 방금 생성한 Connector, Stream, Topic 삭제
 
-```sql
-
+```json
+drop connector "dgen_clickstreams_topic_avro";
+drop streams clickstreams_avro delete topic;
 ```
