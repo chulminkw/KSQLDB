@@ -310,8 +310,6 @@ select * from clickstreams limit 5;
 - clickstream_users Table 생성.
 
 ```sql
-print dgen_clickstream_users limit 3;
-
 CREATE TABLE clickstream_users (
   user_id INTEGER PRIMARY KEY,
   username VARCHAR,
@@ -324,6 +322,8 @@ CREATE TABLE clickstream_users (
   KAFKA_TOPIC = 'dgen_clickstream_users_topic',
   VALUE_FORMAT = 'JSON'
 );
+
+print dgen_clickstream_users limit 3;
 
 select * from clickstream_users emit changes limit 3;
 ```
