@@ -307,33 +307,6 @@ VALUE_FORMAT = 'JSON'
 select * from clickstreams limit 5;
 ```
 
-- 아래와 같이 Json Value의 일부 컬럼들만 Stream/Table 컬럼으로 설정 가능.
-
-```sql
-CREATE STREAM clickstreams_small (
-  ip VARCHAR KEY,
-  userid INTEGER,
-  _time INTEGER,
-  request VARCHAR,
-  status VARCHAR,
-  agent VARCHAR
-)
-WITH (
-KAFKA_TOPIC = 'dgen_clickstreams_topic',
-KEY_FORMAT = 'KAFKA',
-VALUE_FORMAT = 'JSON'
-);  
-
-select * from clickstreams_small limit 5;
-```
-
-- dgen_clickstream_users Connector 재 생성. 기존 topic 명을 dgen_clickstream_users_topic으로 변경.
-
-```sql
-kafka-topics --bootstrap-server localhost:9092 --delete --topic dgen_clickstream_users
-kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users_topic --partitions 3
-```
-
 - 아래 설정으로 dgen_clickstream_users.json 변경.
 
 ```sql
@@ -352,7 +325,7 @@ kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream
 }
 ```
 
-- clickstream_users Table 재 생성.
+- clickstream_users Table 생성.
 
 ```sql
 print dgen_clickstream_users limit 3;
