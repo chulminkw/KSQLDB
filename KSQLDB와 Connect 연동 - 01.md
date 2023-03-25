@@ -307,24 +307,6 @@ VALUE_FORMAT = 'JSON'
 select * from clickstreams limit 5;
 ```
 
-- 아래 설정으로 dgen_clickstream_users.json 변경.
-
-```sql
-{
-  "name": "dgen_clickstream_users",
-  "config": {
-    "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
-    "kafka.topic": "dgen_clickstream_users_topic",
-    "quickstart": "CLICKSTREAM_USERS",
-    "max.interval": 1000,
-    "tasks.max": "1",
-    "key.converter": "org.apache.kafka.connect.converters.IntegerConverter",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "false"
-  }
-}
-```
-
 - clickstream_users Table 생성.
 
 ```sql
@@ -357,14 +339,16 @@ drop connector "dgen_clickstream_users";
 kafka-topics --bootstrap-server localhost:9092 --create --topic dgen_clickstream_users_topic --partitions 3
 ```
 
-```json
+- 아래 설정으로 dgen_clickstream_users.json 변경.
+
+```sql
 {
   "name": "dgen_clickstream_users",
   "config": {
     "connector.class": "io.confluent.kafka.connect.datagen.DatagenConnector",
     "kafka.topic": "dgen_clickstream_users_topic",
     "quickstart": "CLICKSTREAM_USERS",
-    "max.interval": 500,
+    "max.interval": 1000,
     "tasks.max": "1",
     "key.converter": "org.apache.kafka.connect.converters.IntegerConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
