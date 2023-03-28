@@ -38,7 +38,7 @@ kafka-configs --bootstrap-server localhost:9092 --entity-type brokers --entity-n
 ```sql
 drop stream if exists device_status_stream delete topic;
 
--- WITH절에 TIMESTAMP 속성을 VARCHAR 타입 CREATE_TS 컬럼으로 지정. 
+-- WITH절에 TIMESTAMP 속성을 VARCHAR 타입 CREATE_TS 컬럼으로 지정. 아래는 TIMESTAMP_FORMAT을 지정하지 않아서 실패함. 
 CREATE STREAM device_status_stream (
   device_id BIGINT,
   create_ts VARCHAR,
