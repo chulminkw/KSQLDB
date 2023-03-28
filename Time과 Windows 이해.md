@@ -66,7 +66,7 @@ insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19)
 insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
 
 -- 아래는 CREATE_TS가 VARCHAR 컬럼일 때 TIMESTAMP FORMAT으로 적용함. ''T''와 같이 T를 Escape하기 위해 두개의 single quote 적용 필요. 
-drop stream if exists device_status_stream delete topic;
+drop stream if exists device_status_stream;
 
 CREATE STREAM device_status_stream (
   device_id BIGINT,
