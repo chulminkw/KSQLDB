@@ -40,7 +40,7 @@ drop stream if exists device_status_stream delete topic;
 
 -- WITH절에 TIMESTAMP 속성을 VARCHAR 타입 CREATE_TS 컬럼으로 지정. 아래는 TIMESTAMP_FORMAT을 지정하지 않아서 실패함. 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
+  device_id BIGINT KEY,
   create_ts VARCHAR,
   temperature DOUBLE,
   power_watt INT
@@ -66,10 +66,10 @@ insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19)
 insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
 
 -- 아래는 CREATE_TS가 VARCHAR 컬럼일 때 TIMESTAMP FORMAT으로 적용함. ''T''와 같이 T를 Escape하기 위해 두개의 single quote 적용 필요. 
-drop stream if exists device_status_stream;
+drop stream if exists device_status_stream delete topic;
 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
+  device_id BIGINT KEY,
   create_ts VARCHAR,
   temperature DOUBLE,
   power_watt INT
@@ -99,7 +99,7 @@ insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29)
 drop stream if exists device_status_stream delete topic;
 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
+  device_id BIGINT KEY,
   create_ts VARCHAR,
   temperature DOUBLE,
   power_watt INT
@@ -129,7 +129,7 @@ insert into device_status_stream values (2, '2023-02-10 05:24:32.333', 16.7, 29)
 drop stream if exists device_status_stream delete topic;
 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
+  device_id BIGINT KEY,
   create_ts TIMESTAMP,
   temperature DOUBLE,
   power_watt INT
@@ -168,131 +168,135 @@ select rowtime, from_unixtime(rowtime) as rowtime_ts, a.* from device_status_str
 print device_status_stream_topic;
 ```
 
-### Window 설정
+### Tumbling Window
 
-- event가 발생하는 기간(interval)을 window 형태로 지정하여 지정된 window별로 event에 대한 연산 수행 가능.
-- stream/table에 window를 적용하면 기본적으로 해당 stream/table에 설정된 메타 timestamp 값에 따라 window가 설정됨.
-- 아래와 같이 샘플 stream을 생성.
+- 아래와 같이 기존 device_status_stream을 삭제하고 재 생성.
 
 ```sql
 drop stream if exists device_status_stream delete topic;
 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
+  device_id BIGINT KEY,
   create_ts TIMESTAMP,
   temperature DOUBLE,
   power_watt INT
 ) WITH (
-  KAFKA_TOPIC = 'device_status_stream',
-  PARTITIONS = 3,
-  KEY_FORMAT = 'JSON',
-  VALUE_FORMAT = 'JSON'
-);
-
-insert into device_status_stream values (1, '2023-02-10T05:23:32.931', 5.2, 13);
-insert into device_status_stream values (1, '2023-02-10T05:23:42.891', 7.4, 17);
-insert into device_status_stream values (1, '2023-02-10T05:23:53.288', 4.2, 1);
-insert into device_status_stream values (1, '2023-02-10T05:24:22.211', 3.7, 11);
-insert into device_status_stream values (1, '2023-02-10T05:24:32.911', 6.8, 9);
-insert into device_status_stream values (1, '2023-02-10T05:27:15.244', 3.8, 8);
-insert into device_status_stream values (2, '2023-02-10T05:21:19.131', 7.2, 3);
-insert into device_status_stream values (2, '2023-02-10T05:21:25.231', 12.4, 22);
-insert into device_status_stream values (2, '2023-02-10T05:21:39.531', 15.6, 31);
-insert into device_status_stream values (2, '2023-02-10T05:22:00.111', 12.1, 42);
-insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19);
-insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
-
-select rowtime, * from device_status_stream;
-
-select from_unixtime(rowtime) as rowtime_ts, a.* from device_status_stream a;
-```
-
-- window는 여러가지 유형이 있으며, 가장 많이 사용되는 window는 tumbling window임.  window는 group by와 함께 사용되어야 하며 때문에 push 쿼리만 가능.
-
-```sql
-select device_id, count(*) from device_status_stream window tumbling(size 1 seconds) group by device_id emit changes;
-
-select device_id, count(*), windowstart, windowend from device_status_stream window tumbling(size 1 seconds) group by device_id emit changes;
-
-select device_id, count(*), min(rowtime), max(rowtime), windowstart, windowend from device_status_stream window tumbling(size 1 seconds) group by device_id emit changes;
-
-select device_id, count(*), from_unixtime(min(rowtime)), from_unixtime(max(rowtime)), from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end from device_status_stream window tumbling(size 1 seconds) group by device_id emit changes;
-```
-
-- device_status_stream에 레코드 insert시 한번에 다 적용을 했기 때문에 window size가 1초라도 한번에 모든 데이터가 해당 window에 포함될 수 있음. 이번에 insert시 rowtime간의 간격을 좀 더 길게 하면서 데이터 입력
-
-```sql
-drop stream if exists device_status_stream delete topic;
-
-CREATE STREAM device_status_stream (
-  device_id BIGINT,
-  create_ts TIMESTAMP,
-  temperature DOUBLE,
-  power_watt INT
-) WITH (
-  KAFKA_TOPIC = 'device_status_stream',
-  PARTITIONS = 3,
-  KEY_FORMAT = 'JSON',
-  VALUE_FORMAT = 'JSON'
-);
-
--- 아래를 수행시 한 건씩 시간 간격을 두면서 insert 수행. 
-insert into device_status_stream values (1, '2023-02-10T05:23:32.931', 5.2, 13);
-insert into device_status_stream values (1, '2023-02-10T05:23:42.891', 7.4, 17);
-insert into device_status_stream values (1, '2023-02-10T05:23:53.288', 4.2, 1);
-insert into device_status_stream values (1, '2023-02-10T05:24:22.211', 3.7, 11);
-insert into device_status_stream values (1, '2023-02-10T05:24:32.911', 6.8, 9);
-insert into device_status_stream values (1, '2023-02-10T05:27:15.244', 3.8, 8);
-insert into device_status_stream values (2, '2023-02-10T05:21:19.131', 7.2, 3);
-insert into device_status_stream values (2, '2023-02-10T05:21:25.231', 12.4, 22);
-insert into device_status_stream values (2, '2023-02-10T05:21:39.531', 15.6, 31);
-insert into device_status_stream values (2, '2023-02-10T05:22:00.111', 12.1, 42);
-insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19);
-insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
-```
-
-- window 기간(interval)을 5초로 설정하고 다시 조회
-
-```sql
-select device_id, count(*), from_unixtime(min(rowtime)), from_unixtime(max(rowtime)), from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end from device_status_stream window tumbling(size 1 seconds) group by device_id emit changes;
-```
-
-### Custom Timestamp의 설정
-
-- 메타성 timestamp는 특별히 지정하지 않으면 데이터 입력 시각이 할당됨. 이 timestamp 시간을 Stream/table의 컬럼을 지정하여 설정할 수 있음. device_status_stream의 create_ts는 해당 event가 소스 시스템에서 발생한 시간임. 이를 timestamp로 지정함.
-
-```sql
-drop stream if exists device_status_stream delete topic;
-
--- WITH절에 TIMESTAMP 속성을 CREATE_TS 컬럼으로 지정. 
-CREATE STREAM device_status_stream (
-  device_id BIGINT,
-  create_ts TIMESTAMP,
-  temperature DOUBLE,
-  power_watt INT
-) WITH (
-  KAFKA_TOPIC = 'device_status_stream',
-  PARTITIONS = 3,
-  KEY_FORMAT = 'JSON',
+  KAFKA_TOPIC = 'device_status_stream_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
   VALUE_FORMAT = 'JSON',
   TIMESTAMP = 'CREATE_TS'
 );
 
--- 아래는 CREATE_TS가 VARCHAR 컬럼일 때 TIMESTAMP FORMAT으로 적용함. ''T''와 같이 T를 Escape하기 위해 두개의 single quote 적용 필요. 
+insert into device_status_stream values (1, '2023-02-10T05:23:32.931', 5.2, 13);
+insert into device_status_stream values (1, '2023-02-10T05:23:42.891', 7.4, 17);
+insert into device_status_stream values (1, '2023-02-10T05:23:53.288', 4.2, 1);
+insert into device_status_stream values (1, '2023-02-10T05:24:22.211', 3.7, 11);
+insert into device_status_stream values (1, '2023-02-10T05:24:32.911', 6.8, 9);
+insert into device_status_stream values (1, '2023-02-10T05:27:15.244', 3.8, 8);
+insert into device_status_stream values (2, '2023-02-10T05:21:19.131', 7.2, 3);
+insert into device_status_stream values (2, '2023-02-10T05:21:25.231', 12.4, 22);
+insert into device_status_stream values (2, '2023-02-10T05:21:39.531', 15.6, 31);
+insert into device_status_stream values (2, '2023-02-10T05:22:00.111', 12.1, 42);
+insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19);
+insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
+```
+
+- 아래와 같이 Tumbling window를 적용하여 출력 결과 확인
+
+```sql
+select count(*) as cnt from device_status_stream window tumbling (size 1 minutes) emit changes;
+
+select device_id, count(*) as cnt from device_status_stream group by device_id emit changes;
+
+--window 절을 사용하면 windowstart, windowend 컬럼을 사용할 수 있음. 
+select device_id, WINDOWSTART, WINDOWEND, count(*) as cnt from device_status_stream window tumbling (size 1 minutes) 
+group by device_id emit changes;
+
+select WINDOWSTART, WINDOWEND, count(*) as cnt from device_status_stream window tumbling (size 1 minutes) group by 1 emit changes;
+
+-- size를 1, 2 minutes, 10 minutes, 1 seconds로 변화 시키면서 결과 확인. 
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by device_id emit changes;
+```
+
+- 아래 신규 데이터를 입력한 뒤 출력 결과 확인.
+
+```sql
+insert into device_status_stream values (1, '2023-02-10T05:27:22.244', 4.8, 9);
+insert into device_status_stream values (2, '2023-02-10T05:25:03.343', 12.7, 19);
+```
+
+### Hopping Window
+
+- 아래와 같이 Hopping window를 적용하여 출력 결과 확인
+
+```sql
+select device_id, count(*) as cnt from device_status_stream group by device_id emit changes;
+
+--window 절을 사용하면 windowstart, windowend 컬럼을 사용할 수 있음.  
+select device_id, WINDOWSTART, WINDOWEND, count(*) as cnt from device_status_stream window hopping (size 1 minutes, advance by 10 seconds) 
+group by device_id emit changes;
+
+-- size를 2 minutes, 10 minutes, 1 seconds로 변화 시키면서 결과 확인. 
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window hopping (size 1 minutes, advance by 10 seconds)  group by device_id emit changes;
+
+```
+
+- 아래 신규 데이터를 입력한 뒤 출력 결과 확인.
+
+```sql
+insert into device_status_stream values (1, '2023-02-10T05:27:42.244', 2.8, 9);
+insert into device_status_stream values (1, '2023-02-10T05:28:30.244', 6.2, 11);
+insert into device_status_stream values (2, '2023-02-10T05:25:23.343', 12.7, 19);
+```
+
+### Session Window
+
+- 아래와 같이 Session window를 적용하여 출력 결과 확인
+
+```sql
+select device_id, count(*) as cnt from device_status_stream group by device_id emit changes;
+
+--window 절을 사용하면 windowstart, windowend 컬럼을 사용할 수 있음. 
+select device_id, WINDOWSTART, WINDOWEND, count(*) as cnt from device_status_stream window session(1 minutes) 
+group by device_id emit changes;
+
+-- session을 1 minutes, 3 minutes 변화 시키면서 결과 확인. 
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window session(1 minutes)  group by device_id emit changes;
+
+```
+
+- 아래 신규 데이터를 입력한 뒤 출력 결과 확인.
+
+```sql
+
+insert into device_status_stream values (2, '2023-02-10T05:27:12.343', 12.7, 19);
+-- 기존 window 크기를 변화 시키므로 기존 window 데이터는 tombstone 메시지 발생. 
+insert into device_status_stream values (1, '2023-02-10T05:28:40.189', 6.0, 12);
+insert into device_status_stream values (2, '2023-02-10T05:23:15.343', 11.7, 29);
+```
+
+### Window의 Grace period
+
+- 아래와 같이 기존 device_status_stream을 삭제하고 재 생성.
+
+```sql
 drop stream if exists device_status_stream delete topic;
 
 CREATE STREAM device_status_stream (
-  device_id BIGINT,
-  create_ts VARCHAR,
+  device_id BIGINT KEY,
+  create_ts TIMESTAMP,
   temperature DOUBLE,
   power_watt INT
 ) WITH (
-  KAFKA_TOPIC = 'device_status_stream',
-  PARTITIONS = 3,
-  KEY_FORMAT = 'JSON',
+  KAFKA_TOPIC = 'device_status_stream_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
   VALUE_FORMAT = 'JSON',
-  TIMESTAMP = 'CREATE_TS',
-  TIMESTAMP_FORMAT = 'yyyy-MM-dd''T''HH:mm:ss.SSS'
+  TIMESTAMP = 'CREATE_TS'
 );
 
 insert into device_status_stream values (1, '2023-02-10T05:23:32.931', 5.2, 13);
@@ -309,53 +313,60 @@ insert into device_status_stream values (2, '2023-02-10T05:22:19.121', 22.7, 19)
 insert into device_status_stream values (2, '2023-02-10T05:24:32.333', 16.7, 29);
 ```
 
-- create_ts 컬럼이 timestamp로 지정되어 있음을 확인하고 rowtime 컬럼과 create_ts 컬럼 확인.
+- 아래와 같이 Window에 Grace Period를 적용하여 출력 결과 확인
 
 ```sql
--- create_ts 컬럼이 timestamp로 지정되어 있음을 확인. 
-describe device_status_stream extended;
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by device_id emit changes;
 
--- rowtime이 create_ts와 동일함. 
-select from_unixtime(rowtime) as event_ts, a.* from device_status_stream a;
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes, grace period 1 hour) group by device_id emit changes;
+
+-- grace period를 2 ~ 6 minutes까지 변화 시키면서 결과 출력
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes, grace period 2 minutes) group by device_id emit changes;
 ```
 
-- window size를 변경하면서 쿼리 수행.
+### Window Retention
+
+- Window Retention을 가지는 MView 생성.
 
 ```sql
--- 10초 간격 window size
-select device_id, count(*) as cnt, from_unixtime(min(rowtime)), from_unixtime(max(rowtime)), 
-	from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end 
-from device_status_stream window tumbling(size 10 seconds) group by device_id emit changes;
-
--- 30초 간격 window size
-select device_id, count(*) as cnt, from_unixtime(min(rowtime)), from_unixtime(max(rowtime)), 
-	from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end 
-from device_status_stream window tumbling(size 30 seconds) group by device_id emit changes;
-
--- 1분 간격 window size 
-select device_id, count(*) as cnt, from_unixtime(min(rowtime)), from_unixtime(max(rowtime)), 
-	from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end 
-from device_status_stream window tumbling(size 1 minutes) group by device_id emit changes;
-
--- max(create_ts)는 max()함수가 varchar/timestamp 를 지원하지 않으므로 수행 불가. 
-select device_id, count(*) as cnt, min(unix_timestamp(create_ts)) as create_ts_start, max(unix_timestamp(create_ts)) as create_ts_end, 
-	from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end, latest_by_offset(create_ts) as latest_ts
-from device_status_stream window tumbling(size 1 minutes) group by device_id emit changes;
-```
-
-- 만약 device_status_stream의 데이터가 주기적으로 발생하지 않고 delay가 발생하는 지 확인하고자 할 경우
-
-```sql
--- 개별 device_id별 건수와 window size내에서 delay 정보를 table로 생성.
-create table device_status_tab_by_id
+create table device_count_mv01
 as
-select device_id, count(*) as cnt, from_unixtime(min(rowtime)) as create_ts_start, from_unixtime(max(rowtime)) as create_ts_end,
-	from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end, 
-	latest_by_offset(create_ts) as latest_create_ts,
-	windowend - max(unix_timestamp(create_ts)) as max_delay_ms
-from device_status_stream window tumbling(size 1 minutes) group by device_id emit changes;
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes, retention 7 days) group by device_id emit changes;
 
--- 최대 delay가 30초 이상인 데이터 추출. 
-select device_id, cnt, w_start, w_end, latest_create_ts, max_delay_ms
-from device_status_tab_by_id where max_delay_ms > 30000;
+select * from device_count_mv01 emit changes;
+print DEVICE_COUNT_MV01;
+
+create table device_count_mv02
+as
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by device_id emit changes;
+
+select * from device_count_mv02 emit changes;
+print DEVICE_COUNT_MV02;
+```
+
+- 아래와 같이 신규 데이터를 device_status_stream에 입력하고 device_count_mv01의 출력 결과를 확인.
+
+```sql
+insert into device_status_stream values (1, '2023-02-11T05:23:32.931', 5.2, 13);
+insert into device_status_stream values (1, '2023-02-11T05:23:42.891', 7.4, 17);
+
+insert into device_status_stream values (1, '2023-03-23T05:23:32.931', 5.2, 13);
+insert into device_status_stream values (1, '2023-03-24T05:23:42.891', 7.4, 17);
+
+insert into device_status_stream values (1, '2023-04-28T05:23:32.931', 5.2, 13);
+
+```
+
+- 실습을 위해 생성한 MView 삭제
+
+```sql
+drop table device_count_mv01 delete topic;
+
+drop table device_count_mv02 delete topic;
+
 ```
