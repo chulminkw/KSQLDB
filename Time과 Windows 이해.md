@@ -327,6 +327,13 @@ select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND
 from device_status_stream window tumbling (size 1 minutes, grace period 2 minutes) group by device_id emit changes;
 ```
 
+- 아래와 같이 신규 데이터를 입력하고 데이터 확인.
+
+```sql
+insert into device_status_stream values (1, '2023-02-10T05:22:32.931', 5.2, 13);
+insert into device_status_stream values (1, '2023-02-10T05:23:42.931', 5.2, 13);
+```
+
 ### Window Retention
 
 - Window Retention을 가지는 MView 생성.
