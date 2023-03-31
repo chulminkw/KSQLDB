@@ -381,7 +381,7 @@ drop table device_count_mv02 delete topic;
 ### Window 조인 - 01
 
 - Stream-Stream 조인은 조인 시 지정된 Window 기간내에서만 조인 가능.
-- 아래 device_master_stream 생성.
+- 기존 device_status_stream을 재 생성하되 데이터를 변경. 신규 device_master_stream 생성.
 
 ```sql
 drop stream if exists device_status_stream delete topic;
