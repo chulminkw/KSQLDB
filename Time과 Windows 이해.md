@@ -481,9 +481,9 @@ insert into device_master_stream values (2, '2023-02-10T05:20:25.231', 'GPS Sens
 
 ```sql
 -- Stream-Stream CSAS Mview 생성 시 grace period를 지정하지 않으면 제대로 된 결과가 출력되지 않을 수 있음
-create stream prod_device_status_monitor_stream
+create stream prod_device_monitor_by5min_stream
 as
-select b.device_id, b.create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+select b.device_id as device_id, b.create_ts as dev_create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
 from device_master_stream b
   join device_status_stream a within 5 minutes grace period 1 minutes on a.device_id = b.device_id
 where b.upgrade_type='P' emit changes;
@@ -497,6 +497,7 @@ insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine S
 ```
 
 ### Window 조인 - 02
+- Action 성 Stream과 Stream 조인시 Windown 조인의 활용. .
 
 ```sql
 drop stream equipment_status_stream delete topic;
