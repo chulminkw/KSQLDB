@@ -377,3 +377,233 @@ drop table device_count_mv01 delete topic;
 drop table device_count_mv02 delete topic;
 
 ```
+
+### Window 조인 - 01
+
+- Stream-Stream 조인은 조인 시 지정된 Window 기간내에서만 조인 가능.
+- 아래 device_master_stream 생성.
+
+```sql
+drop stream if exists device_status_stream delete topic;
+
+CREATE STREAM device_status_stream (
+  device_id BIGINT KEY,
+  create_ts TIMESTAMP,
+  temperature DOUBLE,
+  power_watt INT,
+  equip_id VARCHAR
+) WITH (
+  KAFKA_TOPIC = 'device_status_stream_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
+  VALUE_FORMAT = 'JSON',
+  TIMESTAMP = 'CREATE_TS'
+);
+
+-- 새로운 stream device_master_stream 생성. 
+drop stream if exists device_master_stream delete topic;
+
+CREATE STREAM device_master_stream (
+  device_id BIGINT KEY,
+  create_ts TIMESTAMP,
+  device_name VARCHAR,
+  upgrade_type VARCHAR
+) WITH (
+  KAFKA_TOPIC = 'device_master_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
+  VALUE_FORMAT = 'JSON',
+  TIMESTAMP = 'CREATE_TS'
+);
+
+--device_master_stream에 데이터 입력 
+insert into device_master_stream values (1, '2023-02-10T04:03:32.931', 'Engine Sensor', 'D');
+insert into device_master_stream values (2, '2023-02-10T04:05:25.231', 'GPS Sensor', 'D');
+
+--device_status_stream에 데이터 입력. 
+insert into device_status_stream values (1, '2023-02-10T05:23:32.931', 5.2, 13, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:23:35.121', 22.7, 19, 'A001');
+
+insert into device_status_stream values (1, '2023-02-10T05:23:42.891', 7.4, 17, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:23:54.333', 16.7, 29, 'A001');
+
+-- within 1 hours는 조인의 선두 stream인 device_status_stream의 과거 1시간 ~ 미래 1시간 이내 기준을 조인 대상
+-- Stream-Stream 조인 Mview시 Grace Period를 반드시 명시 필요. 
+-- within 2 hours로 변경해서 다시 조인 수행. 
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, 
+       a.create_ts as status_ts, a.power_watt
+from device_status_stream a
+  join device_master_stream b within 1 hours grace period 1 minutes on a.device_id = b.device_id emit changes;
+```
+
+- device_master_stream에 아래 데이터를 입력하면서 window join의 within 1~3 hour로 변경하면서 결과 확인.
+
+```sql
+-- device_status_stream에 아래 데이터를 입력하면서 window join의 within 1~3 hour로 변경하면서 결과 확인. 
+insert into device_master_stream values (1, '2023-02-10T06:03:32.931', 'Engine Sensor', 'R');
+insert into device_master_stream values (2, '2023-02-10T06:05:25.231', 'GPS Sensor', 'R');
+
+insert into device_master_stream values (1, '2023-02-10T08:03:32.931', 'Engine Sensor', 'C');
+insert into device_master_stream values (2, '2023-02-10T08:05:25.231', 'GPS Sensor', 'C');
+```
+
+- device_status_stream 에 아래 데이터를 입력하면서 window join의 within 1~3 hour로 변경하면서 결과 확인.
+
+```sql
+insert into device_status_stream values (1, '2023-02-10T05:23:53.288', 4.2, 1, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:24:05.131', 7.2, 3, 'A001');
+
+insert into device_status_stream values (1, '2023-02-10T05:24:22.211', 3.7, 11, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:24:25.231', 12.4, 22, 'A001');
+
+insert into device_status_stream values (1, '2023-02-10T05:24:32.911', 6.8, 9, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:24:39.531', 15.6, 31, 'A001');
+
+insert into device_status_stream values (1, '2023-02-10T05:25:02.244', 3.8, 8, 'A001');
+insert into device_status_stream values (2, '2023-02-10T05:25:01.111', 12.1, 42, 'A001');
+```
+
+- device_master_stream에 upgrade_type을 ‘P’로 하여 데이터 입력
+- device_master_stream의 upgrade_type이 ‘P’ 일때 전후 5분이내 device_status_stream의 데이터 상태 추출.
+
+```sql
+select b.device_id, b.create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 2 minutes on a.device_id = b.device_id
+where b.upgrade_type='P' emit changes;
+
+-- device_master_stream에 upgrade_type이 P 인 데이터 입력. 
+insert into device_master_stream values (1, '2023-02-10T05:20:32.931', 'Engine Sensor', 'P');
+insert into device_master_stream values (2, '2023-02-10T05:20:25.231', 'GPS Sensor', 'P');
+```
+
+- 해당 조건으로 Mview CSAS 생성 및 신규 데이터 입력. .
+
+```sql
+-- Stream-Stream CSAS Mview 생성 시 grace period를 지정하지 않으면 제대로 된 결과가 출력되지 않을 수 있음
+create stream prod_device_status_monitor_stream
+as
+select b.device_id, b.create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 1 minutes on a.device_id = b.device_id
+where b.upgrade_type='P' emit changes;
+
+select * from prod_device_status_monitor_stream emit changes;
+
+insert into device_status_stream values (2, '2023-02-10T05:25:12.333', 66.7, 109, 'A001');
+
+-- device_master_stream에 upgrade_type이 P 인 데이터 입력. 
+insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine Sensor', 'P');
+```
+
+### Window 조인 - 02
+
+```sql
+drop stream equipment_status_stream delete topic;
+
+create stream equipment_status_stream 
+(
+  equip_id VARCHAR KEY, 
+  create_ts TIMESTAMP,
+  status VARCHAR
+) WITH (
+  KAFKA_TOPIC = 'equipment_status_tream_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
+  VALUE_FORMAT = 'JSON',
+  TIMESTAMP = 'CREATE_TS'
+);
+
+insert into equipment_status_stream values ('A001', '2023-02-10T05:21:00.000', 'GOOD');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:22:00.000', 'GOOD');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:23:00.000', 'FAULT');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:24:00.000', 'FAULT');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:25:00.000', 'FAULT');
+
+-- within 1 minutes 로 equipment_status_stream과 device_status_stream 조인. 
+select a.equip_id, a.create_ts as equip_create_ts, a.status, b.device_id, b.create_ts device_ts, b.power_watt
+from equipment_status_stream a
+  join device_status_stream b within 1 minutes on a.equip_id = b.equip_id
+where a.status='FAULT' emit changes;
+
+-- 아래 데이터를 입력하고 위의 조인 결과 모니터링. 
+insert into equipment_status_stream values ('A001', '2023-02-10T05:26:00.000', 'FAULT');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:27:00.000', 'FAULT');
+insert into equipment_status_stream values ('A001', '2023-02-10T05:28:00.000', 'GOOD');
+```
+
+### 조인 결과 MView의 ROWTIME
+
+- 서로 다른 ROWTIME을 가지는 두개의 Stream/Table간의 조인 결과 MVIEW의 ROWTIME은 Stream-Stream 조인, Stream-Table 조인, Table-Table 조인에 따라 달라짐.
+- Stream-Stream, Table-Table의 경우는 조인되는 두개의 Row중 가장 max인 ROWTIME을 가짐.
+- Stream-Table 조인의 경우는 Stream의 ROWTIME을 가짐.
+
+```sql
+DROP TABLE device_master_table delete topic;
+
+CREATE TABLE device_master_table (
+  device_id BIGINT PRIMARY KEY,
+  create_ts TIMESTAMP,
+  device_name VARCHAR,
+  upgrade_type VARCHAR
+) WITH (
+  KAFKA_TOPIC = 'device_master_table_topic',
+  PARTITIONS = 1, 
+  KEY_FORMAT = 'KAFKA',
+  VALUE_FORMAT = 'JSON',
+  TIMESTAMP = 'CREATE_TS'
+);
+
+insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine Sensor', 'R');
+insert into device_master_stream values (2, '2023-02-10T05:25:25.231', 'GPS Sensor', 'R');
+```
+
+- Stream과 Stream의 조인 MView 생성후 Rowtime 확인.
+
+```sql
+drop stream prod_device_status_monitor_stream delete topic;
+
+-- stream-stream 조인 CSAS MView생성. 
+create stream prod_device_status_monitor_stream
+as
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
+where b.upgrade_type='P' emit changes;
+
+drop stream prod_device_status_monitor_stream_01 delete topic;
+
+create stream prod_device_status_monitor_stream_01
+as
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
+where b.upgrade_type='P';
+
+drop stream prod_device_status_monitor_stream_02 delete topic;
+
+create stream prod_device_status_monitor_stream_02
+as
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
+where b.upgrade_type='P' emit changes;
+
+--생성된 Join CSAS Mview의 레코드별 ROWTIME 확인. 
+select from_unixtime(rowtime) as rowtime_ts, * from prod_device_status_monitor_stream emit changes;
+
+-- 조인 MView에 Window Aggregation 적용. 
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end
+       , avg(power_watt) as avg_power_watt, count(*) as cnt 
+from prod_device_status_monitor_stream window tumbling (size 1 minutes, grace period 1 minutes)
+group by device_id emit changes;
+
+create table prod_device_avg_watt_table
+as
+select device_id, avg(power_watt) as avg_power_watt, count(*) as cnt 
+from prod_device_status_monitor_stream
+group by device_id emit changes;
+
+select from_unixtime(rowtime) as rowtime_ts, * from prod_device_avg_watt_table emit changes;
+
+```
