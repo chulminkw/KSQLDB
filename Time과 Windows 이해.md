@@ -508,7 +508,7 @@ create stream equipment_status_stream
   create_ts TIMESTAMP,
   status VARCHAR
 ) WITH (
-  KAFKA_TOPIC = 'equipment_status_tream_topic',
+  KAFKA_TOPIC = 'equipment_status_stream_topic',
   PARTITIONS = 1,
   KEY_FORMAT = 'KAFKA',
   VALUE_FORMAT = 'JSON',
