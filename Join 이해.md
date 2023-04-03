@@ -205,52 +205,6 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (6, 1,'branch_visit',0.3);
 ```
 
-### join 실습- table-table 조인.
-
-- table-table 조인도 기존 stream-table 조인과 큰 차이는 없음(다만 1:1 관계의 조인, 그리고 1:m 관계의 조인에 대해서는 생각해볼 사항들이 있음)
-
-```sql
---ctas mview로 새로운 table 생성. 
-create table user_activity_mv01_tab
-as
-select user_id, count(*) as user_cnt, sum(activity_point) as sum_point
-from user_activity_stream
-group by user_id;
-
--- table-table 조인 수행. push 쿼리만 가능. 
-select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
-from simple_user_table a
-    join user_activity_mv01_tab b on a.user_id = b.user_id emit changes;
-```
-
-- table - table 조인 시 1: 1이 아닌 1:m 조인 수행.  stream - table과 마찬가지로 반드시 m이 되는 테이블이 조인 선두, 1이 되는 집합이 조인 후미에 와야 함.
-
-```sql
---ctas mview로 새로운 table 생성. 
--- 여러개의 컬럼이 Primary Key가 될 경우 KEY_FORMAT은 KAFKA-FORMAT 과 같은 primitive 타입이 될 수가 없으며 JSON Format등으로 설정해야함. 
-create table user_activity_mv02_tab
-with
-(
--- 아래는 FORMAT='JSON'으로 대체 될 수 있음. 
-KEY_FORMAT='JSON',
-VALUE_FORMAT='JSON'
-)
-as
-select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
-from user_activity_stream
-group by user_id, activity_type;
-
--- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
-select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
-from simple_user_table a
-    join user_activity_mv02_tab b on a.user_id = b.user_id emit changes;
-
---아래는 m레벨의 집합이 조인 선두에 오므로 수행 가능. 
-select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
-from user_activity_mv02_tab  a
-    join simple_user_table b on a.user_id = b.user_id emit changes;
-```
-
 ### 조인시 Co-partitioning 제약 조건
 
 - 조인되는 두개의 Stream/Table은 동일한 파티션 개수, 동일한 조인(파티션) key 타입, 동일한 파티션 key 분배를 가져야만 정상적인 조인이 가능.
@@ -371,6 +325,136 @@ inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit ch
 select b.user_id, b.name, a.* 
 from user_activity_stream a
 inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
+```
+
+### join 실습- table-table 조인.
+
+- 기존 simple_user_stream과 simple_user_table, user_activity_stream 재 생성.
+- table-table 조인은 빈번하게 사용되지는 않음. 1:1 조인만 사용권장하며 1:M 조인 사용시 매우 주의가 필요함.
+
+```sql
+--ctas mview로 새로운 table 생성. 
+create table user_activity_mv01_tab
+as
+select user_id, count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
+group by user_id;
+
+-- table-table 조인 수행. push 쿼리만 가능. 
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
+from simple_user_table a
+    join user_activity_mv01_tab b on a.user_id = b.user_id emit changes;
+```
+
+- simple_user_table에 신규 데이터 입력
+
+```sql
+insert into simple_user_table(user_id, name, email) values (5, 'Tomsons', 'test_email_05@test.domain');
+
+-- table 위치를 변경해서 다시 조인. 
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
+from user_activity_mv01_tab b
+    join simple_user_table a on a.user_id = b.user_id emit changes;
+
+insert into simple_user_table(user_id, name, email) values (5, 'Tommaa', 'test_email_05@test.domain');
+```
+
+- table - table m:1 조인 수행.  stream - table과 마찬가지로 반드시 m이 되는 테이블이 조인 선두, 1이 되는 집합이 조인 후미에 와야 함.
+- 무엇보다도 m:1 조인 시 M쪽 KEY가 JSON 포맷으로 되면서 조인 대상 테이블의 조인 키별 파티션 분배가 서로 달라지면서 조인 결과가 제대로 생성되지 않는 문제가 발생.
+
+```sql
+--ctas mview로 새로운 table 생성. 
+-- 여러개의 컬럼이 Primary Key가 될 경우 KEY_FORMAT은 KAFKA-FORMAT 과 같은 primitive 타입이 될 수가 없으며 JSON Format등으로 설정해야함. 
+create table user_activity_mv02_tab
+with
+(
+-- 아래는 FORMAT='JSON'으로 대체 될 수 있음. 
+KEY_FORMAT='JSON',
+VALUE_FORMAT='JSON'
+)
+as
+select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
+group by user_id, activity_type;
+
+-- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
+select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
+from simple_user_table a
+    join user_activity_mv02_tab b on a.user_id = b.user_id emit changes;
+
+--아래는 m레벨의 집합이 조인 선두에 오므로 수행 가능. 
+--하지만 조인 키로 조인 테이블들이 서로 다른 파티션에 존재하므로 제대로 조인이 되지 않음. 
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
+from user_activity_mv02_tab  a
+    join simple_user_table b on a.user_id = b.user_id emit changes;
+```
+
+- M:1 조인을 반드시 해야할 경우 파티션의 갯수는 양쪽 테이블 모두 1개가 되어야 함.
+
+```sql
+--ctas mview로 새로운 table 생성. 
+-- 여러개의 컬럼이 Primary Key가 될 경우 KEY_FORMAT은 KAFKA-FORMAT 과 같은 primitive 타입이 될 수가 없으며 JSON Format등으로 설정해야함. 
+create table user_activity_mv03_tab
+with
+(
+-- 아래는 FORMAT='JSON'으로 대체 될 수 있음. 
+KEY_FORMAT='JSON',
+VALUE_FORMAT='JSON',
+PARTITIONS = 1
+)
+as
+select user_id, activity_type, count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
+group by user_id, activity_type;
+
+create stream simple_user_onep_table
+(
+	user_id varchar key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_onep_table_topic',
+  KEY_FORMAT = 'KAFKA', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+insert into simple_user_onep_table(user_id, name, email) values ('1', 'John', 'test_email_01@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
+
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
+from user_activity_mv03_tab  a
+    join simple_user_table b on a.user_id = b.user_id emit changes;
+```
+
+- Group by CTAS로 생성된 테이블과 Master성 테이블 조인을 하는 경우 Stream과 Table 조인 후 Group by로 변경하는것 이 더 효율적임
+
+```sql
+create stream user_activity_join_stream_mv
+as
+select a.user_id as user_id, b.name as name, 
+   a.activity_type as activity_type, a.activity_point as activity_point
+from user_activity_stream a
+  join simple_user_table b on a.user_id = b.user_id emit changes;
+
+create table user_acvitity_summary_table_mv01
+as
+select user_id, latest_by_offset(name) as name, 
+   count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
+group by user_id emit changes;
+
+select * from user_activity_summary_table_mv01 emit changes;
+
+create table user_acvitity_summary_table_mv02
+as
+select user_id, activity_type, latest_by_offset(name) as name, 
+   count(*) as user_cnt, sum(activity_point) as sum_point
+from user_activity_stream
+group by user_id, activity_type emit changes;
 ```
 
 ### Outer Join
