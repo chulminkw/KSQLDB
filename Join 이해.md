@@ -409,7 +409,7 @@ group by user_id, activity_type;
 
 create stream simple_user_onep_table
 (
-	user_id varchar key,
+	user_id integer key,
 	name varchar,
 	email varchar
 ) with (
@@ -419,11 +419,11 @@ create stream simple_user_onep_table
   PARTITIONS = 1
 );
 
-insert into simple_user_onep_table(user_id, name, email) values ('1', 'John', 'test_email_01@test.domain');
-insert into simple_user_onep_table(user_id, name, email) values ('2', 'Merry', 'test_email_02@test.domain');
-insert into simple_user_onep_table(user_id, name, email) values ('3', 'Elli', 'test_email_03@test.domain');
-insert into simple_user_onep_table(user_id, name, email) values ('4', 'Mike', 'test_email_04@test.domain');
-insert into simple_user_onep_table(user_id, name, email) values ('5', 'Tommy', 'test_email_05@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+insert into simple_user_onep_table(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
 
 select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
 from user_activity_mv03_tab  a
@@ -440,21 +440,34 @@ select a.user_id as user_id, b.name as name,
 from user_activity_stream a
   join simple_user_table b on a.user_id = b.user_id emit changes;
 
-create table user_acvitity_summary_table_mv01
+create table user_activity_summary_table_mv01
 as
 select user_id, latest_by_offset(name) as name, 
    count(*) as user_cnt, sum(activity_point) as sum_point
-from user_activity_stream
+from user_activity_join_stream_mv
 group by user_id emit changes;
 
+-- user_activity_stream 이후에 table의 user_id 5번에 대한 이름이 변경된 데이터는 출력되지 않음. 
 select * from user_activity_summary_table_mv01 emit changes;
+select * from user_activity_join_stream_mv emit changes;
 
-create table user_acvitity_summary_table_mv02
+-- user_activity_stream에 신규 데이터 입력후에 출력 확인. 
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 2,'deposit',0.78);
+
+create table user_activity_summary_table_mv02
 as
 select user_id, activity_type, latest_by_offset(name) as name, 
    count(*) as user_cnt, sum(activity_point) as sum_point
-from user_activity_stream
+from user_activity_join_stream_mv
 group by user_id, activity_type emit changes;
+
+select * from user_activity_summary_table_mv02 emit changes;
+
+drop table user_activity_mv03_tab delete topic;
+drop table user_activity_summary_table_mv02 delete topic;
+drop table user_activity_summary_table_mv01 delete topic;
+drop stream user_activity_join_stream_mv delete topic;
+drop stream simple_user_onep_table delete topic;
 ```
 
 ### Outer Join
