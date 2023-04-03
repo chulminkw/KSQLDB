@@ -11,9 +11,9 @@ drop stream simple_user_stream delete topic;
 
 create stream simple_user_stream 
 (
-  user_id integer key,
-  name varchar,
-  email varchar
+	user_id integer key,
+	name varchar,
+	email varchar
 ) with (
   KAFKA_TOPIC = 'simple_user_topic',
   KEY_FORMAT = 'KAFKA', 
@@ -158,18 +158,24 @@ inner join simple_user_table b on a.user_id= b.user_id emit changes;
 
 -- MView에 pull 쿼리, push 쿼리 모두 가능. 
 select * from user_activity_join_mv;
+
+drop stream user_activity_join_mv delete topic;
 ```
 
-### Join 대상 Stream과 Table에 신규 데이터 입력 시 조인 결과 Mview의 push 쿼리 실시간 반영.
+### Stream - Table 조인 시 Event 생성 시점에 따른 조인 처리
 
-- stream에 신규 데이터가 입력 시 table에 해당 key로 존재하는 경우라면 조인 결과 Mview를 실시간으로 push query시 이를 반영함.
-- stream에 신규 데이터가 입력 되더라도 table에 해당 key가 존재하지 않으면 inner join일 경우 mview에서 실시간 push query시 이를 반영하지 않음. 단 stream→ table left outer 조인일 경우 stream 데이터만 실시간으로 push 쿼리에서 반영됨.
-- table에 신규 데이터가 기존에 primary key로 존재하는 데이터여서 table update가 발생하는 경우 Mview에 emit cchanges 로 push query로 실시간으로 반영되지는 않음.  Mview에 다시 push query를 적용해야 반영됨.
-- table에 신규 데이터가 기존의 primary key로 존재하지 않는 신규 데이터여서 table insert가 발생할 경우 조인시 stream 조인키에도 없다면 이를 반영하지 않음.  만약 stream 에 새로운 데이터가 추가되고 table에 신규 데이터와 조인이 되는 키값이라면 mview emit changes의 push 쿼리로 바로 반영됨.
-- 
-- stream-join 시 stream과 table에 신규 데이터 발생시 조인 결과  확인.  아래 쿼리 수행
+- 기존 simple_user_stream과 simple_user_table, user_activity_stream 재 생성.
+- user_activity_stream과 simple_user table 조인한 CSAS Stream 생성.
 
 ```sql
+drop stream if exists user_activity_join_mv delete topic;
+
+create stream user_activity_join_mv
+as
+select b.user_id, b.name, a.user_id, a.activity_id, a.activity_type, a.activity_point
+from user_activity_stream a
+inner join simple_user_table b on a.user_id= b.user_id emit changes;
+
 select * from user_activity_join_mv emit changes;
 ```
 
@@ -179,7 +185,7 @@ select * from user_activity_join_mv emit changes;
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 2,'deposit',0.78);
 ```
 
-- ksql cli에서  아래와 같이 table에 신규 데이터 입력후 조인 결과 mview 확인.   table의 데이터가 변경되어도 조인에 반영되지 않음(만약 반영되면 emit changes에 레코드를 추가로 해야 되므로 맞는 설정으로 보임)
+- ksql cli에서  아래와 같이 table에 신규 데이터 입력후 조인 결과 mview 확인.   table의 데이터가 변경되어도 조인 결과에 반영되지 않음
 
 ```sql
 insert into simple_user_table(id, name, email) values (5, 'Tomminn', 'test_email_05@test.domain');
@@ -194,15 +200,9 @@ insert into simple_user_table(id, name, email) values (6, 'Brandon', 'test_email
 - 새로운 user_id 6으로 user_activity_stream 데이터를 입력 한 후 조인 결과 확인.  조인 결과에 반영됨.
 
 ```sql
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 3,'mobile_open',0.42);
+
 INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (6, 1,'branch_visit',0.3);
-```
-
-- 아래는 stream에 먼저 신규 데이터를 입력 후 table에 신규 데이터(기존 update아님) 입력 하여 mview push 쿼리 실시간 반영 사항 확인.  join을 실시간 trigger하는 것은 stream임. 먼저 stream에 데이터가 입력되면서 조인이 실시간 trigger가 되었으나 inner join으로 조인이 되지 않아 실시간 mview push 쿼리에 반영되지 않음.  이후 테이블에 신규 데이터가 입력되어도 mview push 쿼리에 실시간 반영되지 않음.  **조인 자체에 반영되지 않음. 왜 그럴까?**
-
-```sql
-INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (7, 1,'branch_visit', 0.42);
-insert into simple_user_table(id, name, email) values (7, 'Michael', 'test_email_07@test.domain');
-
 ```
 
 ### join 실습- table-table 조인.
@@ -249,66 +249,6 @@ from simple_user_table a
 select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
 from user_activity_mv02_tab  a
     join simple_user_table b on a.user_id = b.user_id emit changes;
-```ivity_type;
-
--- 아래는 1레벨의 집합이 조인 선두에 오므로 수행 실패
-select a.user_id, a.name, b.user_id, b.user_cnt, b.sum_point
-from simple_user_table a
-    join user_activity_mv02_tab b on a.user_id = b.user_id emit changes;
-
---아래는 m레벨의 집합이 조인 선두에 오므로 수행 가능. 
-select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
-from user_activity_mv02_tab  a
-    join simple_user_table b on a.user_id = b.user_id emit changes;
-```
-
-### Outer Join
-
-- Stream-Stream Outer Join 수행.
-
-```sql
--- stream to stream outer join 수행. 
-select a.user_id, a.name, b.*
-from simple_user_stream a 
-left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
-
--- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
-insert into simple_user_stream(user_id, name, email) values (7, 'Kelly', 'test_email_07@test.domain');
-
-```
-
-- set ‘auto.offset.reset’=’latest’ 설정후 데이터 재 확인
-
-```sql
-set 'auto.offset.reset' = 'latest';
-
--- stream to stream outer join 수행. 
-select a.user_id, a.name, b.*
-from simple_user_stream a 
-left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
-
--- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
-insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_08@test.domain');
-
-```
-
-- Stream-Table Outer Join 수행.
-
-```sql
-select b.user_id, b.name, a.* 
-from user_activity_stream a
-left join simple_user_table b on a.user_id= b.user_id emit changes;
-
-INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (9, 1,'web_open',0.56);
-```
-
-- Table-Table Outer Join 수행.
-
-```sql
-
-select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
-from user_activity_mv01_tab  a
-left join simple_user_table b on a.user_id = b.user_id emit changes;
 ```
 
 ### 조인시 Co-partitioning 제약 조건
@@ -433,11 +373,60 @@ from user_activity_stream a
 inner join simple_user_table_test b on a.user_id = cast(b.user_id as integer) emit changes;
 ```
 
+### Outer Join
+
+- Stream-Stream Outer Join 수행.
+
+```sql
+-- stream to stream outer join 수행. 
+select a.user_id, a.name, b.*
+from simple_user_stream a 
+left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
+
+-- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
+insert into simple_user_stream(user_id, name, email) values (7, 'Kelly', 'test_email_07@test.domain');
+
+```
+
+- set ‘auto.offset.reset’=’latest’ 설정후 데이터 재 확인
+
+```sql
+set 'auto.offset.reset' = 'latest';
+
+-- stream to stream outer join 수행. 
+select a.user_id, a.name, b.*
+from simple_user_stream a 
+left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
+
+-- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
+insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_08@test.domain');
+
+```
+
+- Stream-Table Outer Join 수행.
+
+```sql
+select b.user_id, b.name, a.* 
+from user_activity_stream a
+left join simple_user_table b on a.user_id= b.user_id emit changes;
+
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (9, 1,'web_open',0.56);
+```
+
+- Table-Table Outer Join 수행.
+
+```sql
+
+select b.user_id, b.name, a.user_id, a.user_cnt, a.sum_point
+from user_activity_mv01_tab  a
+left join simple_user_table b on a.user_id = b.user_id emit changes;
+```
+
 ### 파티션 Key컬럼이 아닌 조인 Key로 조인
 
 ### Data 준비
 
-- simple_customers_table Table을 생성.
+- simple_customers_table Stream을 생성.
 
 ```sql
 drop table simple_customers_table delete topic;
@@ -508,3 +497,52 @@ from sale_orders_stream a
 ```
 
 - cd ~/data/kafka-logs로 이동하여 repartition 내부 토픽이 생성됨을 확인.
+
+```sql
+create stream stream_table_join_test as
+select b.user_id, b.name, a.* 
+from user_activity_stream a
+inner join simple_user_table b on a.user_id= b.user_id emit changes;
+```
+
+```sql
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 7,'mobile_open',0.36);
+```
+
+```sql
+create table user_activity_summary_mv03
+with (
+KEY_FORMAT='JSON',
+VALUE_FORMAT='JSON',
+PARTITIONS=1
+)
+as
+select user_id, activity_type, sum(activity_point) as sum_point, count(*) as cnt
+from user_activity_stream group by user_id, activity_type emit changes;
+
+create table simple_user_table_003
+(
+	user_id integer primary key,
+	name varchar,
+	email varchar
+) with (
+  KAFKA_TOPIC = 'simple_user_test_003',
+  KEY_FORMAT = 'JSON', 
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+
+insert into simple_user_table_003(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
+insert into simple_user_table_003(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
+insert into simple_user_table_003(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
+insert into simple_user_table_003(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
+--이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
+insert into simple_user_table_003(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
+insert into simple_user_table_003(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
+
+select * from simple_user_table emit changes;
+
+select a.user_id as user_id, b.name, a.activity_type, a.sum_point
+from user_activity_summary_mv03 a
+  join simple_user_table_003 b on a.user_id = b.user_id emit changes;
+```
