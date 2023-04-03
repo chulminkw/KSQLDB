@@ -188,13 +188,13 @@ INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_
 - ksql cli에서  아래와 같이 table에 신규 데이터 입력후 조인 결과 mview 확인.   table의 데이터가 변경되어도 조인 결과에 반영되지 않음
 
 ```sql
-insert into simple_user_table(id, name, email) values (5, 'Tomminn', 'test_email_05@test.domain');
+insert into simple_user_table(user_id, name, email) values (5, 'Tomminn', 'test_email_05@test.domain');
 ```
 
-- 아래와 같이 새로운 id 6인 데이터를 추가하면 inner join이 되지 않으므로 당연히 조인 결과에 반영되지 않음.
+- 아래와 같이 새로운 user_id 6인 데이터를 추가하면 inner join이 되지 않으므로 당연히 조인 결과에 반영되지 않음.
 
 ```sql
-insert into simple_user_table(id, name, email) values (6, 'Brandon', 'test_email_06@test.domain');
+insert into simple_user_table(user_id, name, email) values (6, 'Brandon', 'test_email_06@test.domain');
 ```
 
 - 새로운 user_id 6으로 user_activity_stream 데이터를 입력 한 후 조인 결과 확인.  조인 결과에 반영됨.
