@@ -381,7 +381,7 @@ drop table device_count_mv02 delete topic;
 ### Window 조인 - 01
 
 - Stream-Stream 조인은 조인 시 지정된 Window 기간내에서만 조인 가능.
-- 기존 device_status_stream을 재 생성하되 데이터를 변경. 신규 device_master_stream 생성.
+- 기존 device_status_stream을 재 생성하되 데이터를 변경. 신규 device_master_stream 생성
 
 ```sql
 drop stream if exists device_status_stream delete topic;
@@ -488,7 +488,7 @@ from device_master_stream b
   join device_status_stream a within 5 minutes grace period 1 minutes on a.device_id = b.device_id
 where b.upgrade_type='P' emit changes;
 
-select * from prod_device_status_monitor_stream emit changes;
+select * from prod_device_monitor_by5min_stream emit changes;
 
 insert into device_status_stream values (2, '2023-02-10T05:25:12.333', 66.7, 109, 'A001');
 
@@ -497,7 +497,8 @@ insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine S
 ```
 
 ### Window 조인 - 02
-- Action 성 Stream과 Stream 조인시 Windown 조인의 활용. .
+
+- Action 성 Stream과 Stream 조인시 Windown 조인의 활용
 
 ```sql
 drop stream equipment_status_stream delete topic;
@@ -538,6 +539,29 @@ insert into equipment_status_stream values ('A001', '2023-02-10T05:28:00.000', '
 - 서로 다른 ROWTIME을 가지는 두개의 Stream/Table간의 조인 결과 MVIEW의 ROWTIME은 Stream-Stream 조인, Stream-Table 조인, Table-Table 조인에 따라 달라짐.
 - Stream-Stream, Table-Table의 경우는 조인되는 두개의 Row중 가장 max인 ROWTIME을 가짐.
 - Stream-Table 조인의 경우는 Stream의 ROWTIME을 가짐.
+- Stream과 Stream의 조인 MView 생성후 신규 데이터 입력하면서 모니터링.
+
+```sql
+drop stream device_status_monitor_stream delete topic;
+
+-- stream-stream 조인 CSAS MView생성. 
+create stream device_status_monitor_stream
+as
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, 
+       a.create_ts as status_ts, a.power_watt
+from device_master_stream b
+  join device_status_stream a within 5 minutes grace period 1 minutes on a.device_id = b.device_id 
+emit changes;
+
+select from_unixtime(rowtime) as rowtime_ts, * from device_status_monitor_stream emit changes;
+
+-- 다른 CLI에서 신규 데이터를 입력하면서 Stream-Stream 조인 결과의 rowtime 확인. 
+insert into device_master_stream values (1, '2023-02-10T05:24:32.931', 'Engine Sensor', 'Q');
+
+insert into device_status_stream values (1, '2023-02-10T05:26:12.333', 36.7, 49, 'A001');
+```
+
+- Stream - Table 조인을 위해 새로운 table 생성.
 
 ```sql
 DROP TABLE device_master_table delete topic;
@@ -555,56 +579,51 @@ CREATE TABLE device_master_table (
   TIMESTAMP = 'CREATE_TS'
 );
 
-insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine Sensor', 'R');
-insert into device_master_stream values (2, '2023-02-10T05:25:25.231', 'GPS Sensor', 'R');
+insert into device_master_table values (1, '2023-02-10T05:24:32.931', 'Engine Sensor', 'R');
+insert into device_master_table values (2, '2023-02-10T05:25:25.231', 'GPS Sensor', 'R');
 ```
 
-- Stream과 Stream의 조인 MView 생성후 Rowtime 확인.
+- Stream-Table 조인 MView 생성 후 신규 데이터 입력하면서 모니터링.
 
 ```sql
-drop stream prod_device_status_monitor_stream delete topic;
-
--- stream-stream 조인 CSAS MView생성. 
-create stream prod_device_status_monitor_stream
+create stream device_status_monitor_table
 as
-select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
-from device_master_stream b
-  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
-where b.upgrade_type='P' emit changes;
+select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, 
+       a.create_ts as status_ts, a.power_watt
+from  device_status_stream a
+  join device_master_table b on a.device_id = b.device_id 
+emit changes;
 
-drop stream prod_device_status_monitor_stream_01 delete topic;
+select from_unixtime(rowtime) as rowtime_ts, * from device_status_monitor_table emit changes;
 
-create stream prod_device_status_monitor_stream_01
-as
-select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
-from device_master_stream b
-  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
-where b.upgrade_type='P';
+-- 다른 CLI에서 신규 데이터를 입력하면서 Stream-Table 조인 결과의 rowtime 확인. 
+insert into device_master_table values (1, '2023-02-10T05:25:10.181', 'Engine Sensor', 'P');
 
-drop stream prod_device_status_monitor_stream_02 delete topic;
+insert into device_status_stream values (1, '2023-02-10T05:26:58.333', 36.7, 49, 'A001');
+```
 
-create stream prod_device_status_monitor_stream_02
-as
-select b.device_id as device_id, b.create_ts as create_ts, b.upgrade_type, a.create_ts as status_ts, a.power_watt
-from device_master_stream b
-  join device_status_stream a within 5 minutes grace period 10 minutes on a.device_id = b.device_id
-where b.upgrade_type='P' emit changes;
+- Table-Table 조인 MView 생성 후 신규 데이터 입력하면서 모니터링.
 
---생성된 Join CSAS Mview의 레코드별 ROWTIME 확인. 
-select from_unixtime(rowtime) as rowtime_ts, * from prod_device_status_monitor_stream emit changes;
-
--- 조인 MView에 Window Aggregation 적용. 
-select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end
-       , avg(power_watt) as avg_power_watt, count(*) as cnt 
-from prod_device_status_monitor_stream window tumbling (size 1 minutes, grace period 1 minutes)
-group by device_id emit changes;
-
-create table prod_device_avg_watt_table
+```sql
+create table device_avg_watt_table
 as
 select device_id, avg(power_watt) as avg_power_watt, count(*) as cnt 
-from prod_device_status_monitor_stream
+from device_status_monitor_stream
 group by device_id emit changes;
 
-select from_unixtime(rowtime) as rowtime_ts, * from prod_device_avg_watt_table emit changes;
+select from_unixtime(rowtime) as rowtime_ts, * from device_avg_watt_table emit changes;
+
+create table device_avg_watt_monitor_table
+as
+select 
+from device_master_table a
+  join device_avg_watt_table b on a.device_id = b.device_id
+emit changes;
+
+select from_unixtime(rowtime) as rowtime_ts, * from device_avg_watt_monitor_table emit changes;
+
+insert into device_status_stream values (1, '2023-02-10T05:27:58.333', 46.7, 55, 'A001');
+
+insert into device_master_table values (1, '2023-02-10T05:27:10.181', 'Engine Sensor', 'Q');
 
 ```
