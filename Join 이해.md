@@ -475,29 +475,19 @@ drop stream simple_user_onep_table delete topic;
 - Stream-Stream Outer Join 수행.
 
 ```sql
+select from_unixtime(rowtime) as rowtime_ts, * from simple_user_stream;
+
+select from_unixtime(rowtime) as rowtime_ts, * from user_activity_stream;
+
 -- stream to stream outer join 수행. 
 select a.user_id, a.name, b.*
 from simple_user_stream a 
 left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
 
--- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
+-- 다른 CLI 창에서 신규 데이터 입력 후 outer join 결과 확인. 
 insert into simple_user_stream(user_id, name, email) values (7, 'Kelly', 'test_email_07@test.domain');
 
-```
-
-- set ‘auto.offset.reset’=’latest’ 설정후 데이터 재 확인
-
-```sql
-set 'auto.offset.reset' = 'latest';
-
--- stream to stream outer join 수행. 
-select a.user_id, a.name, b.*
-from simple_user_stream a 
-left outer join user_activity_stream b within 2 hours on a.user_id= b.user_id emit changes;
-
--- 다른 CLI 창에서 simple_user_stream 에 신규 데이터 입력. 
-insert into simple_user_stream(user_id, name, email) values (8, 'Watson', 'test_email_08@test.domain');
-
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (7, 1,'web_open',0.61);
 ```
 
 - Stream-Table Outer Join 수행.
@@ -507,7 +497,12 @@ select b.user_id, b.name, a.*
 from user_activity_stream a
 left join simple_user_table b on a.user_id= b.user_id emit changes;
 
-INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (9, 1,'web_open',0.56);
+-- 다른 CLI 창에서 신규 데이터 입력 후 outer join 결과 확인. 
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (8, 1,'web_open',0.56);
+
+INSERT INTO simple_user_stream(user_id, name, email) values (8, 'Mario', 'test_email_08@test.domain');
+
+INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (8, 2,'mobile_open',0.36);
 ```
 
 - Table-Table Outer Join 수행.
@@ -594,52 +589,3 @@ from sale_orders_stream a
 ```
 
 - cd ~/data/kafka-logs로 이동하여 repartition 내부 토픽이 생성됨을 확인.
-
-```sql
-create stream stream_table_join_test as
-select b.user_id, b.name, a.* 
-from user_activity_stream a
-inner join simple_user_table b on a.user_id= b.user_id emit changes;
-```
-
-```sql
-INSERT INTO user_activity_stream (user_id, activity_id, activity_type, activity_point) VALUES (5, 7,'mobile_open',0.36);
-```
-
-```sql
-create table user_activity_summary_mv03
-with (
-KEY_FORMAT='JSON',
-VALUE_FORMAT='JSON',
-PARTITIONS=1
-)
-as
-select user_id, activity_type, sum(activity_point) as sum_point, count(*) as cnt
-from user_activity_stream group by user_id, activity_type emit changes;
-
-create table simple_user_table_003
-(
-	user_id integer primary key,
-	name varchar,
-	email varchar
-) with (
-  KAFKA_TOPIC = 'simple_user_test_003',
-  KEY_FORMAT = 'JSON', 
-  VALUE_FORMAT ='JSON',
-  PARTITIONS = 1
-);
-
-insert into simple_user_table_003(user_id, name, email) values (1, 'John', 'test_email_01@test.domain');
-insert into simple_user_table_003(user_id, name, email) values (2, 'Merry', 'test_email_02@test.domain');
-insert into simple_user_table_003(user_id, name, email) values (3, 'Elli', 'test_email_03@test.domain');
-insert into simple_user_table_003(user_id, name, email) values (4, 'Mike', 'test_email_04@test.domain');
---이름을 Tom 그리고 Tommy로 변경시 데이터 추가 입력. 
-insert into simple_user_table_003(user_id, name, email) values (5, 'Tom', 'test_email_05@test.domain');
-insert into simple_user_table_003(user_id, name, email) values (5, 'Tommy', 'test_email_05@test.domain');
-
-select * from simple_user_table emit changes;
-
-select a.user_id as user_id, b.name, a.activity_type, a.sum_point
-from user_activity_summary_mv03 a
-  join simple_user_table_003 b on a.user_id = b.user_id emit changes;
-```
