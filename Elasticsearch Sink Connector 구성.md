@@ -24,8 +24,10 @@ sudo apt install elasticsearch
 - sudo su - 로 root 권한으로 /etc/elasticsearch/elasticsearch.yml 파일의 network.host와 discovery.seed_hosts 설정을 0.0.0.0 으로 변경하여 localhost가 아닌 외부 client에서도 elasticsearch에 접속할 수 있게 설정. 또한 [xpack.security](http://xpack.security) 관련 설정도 true로 enable 시킴.
 
 ```sql
-network.host: 0.0.0.0
-discovery.seed_hosts: ["0.0.0.0"]
+node.name: node-1
+network.host: 192.168.56.101
+discovery.seed_hosts: ["192.168.56.101"]
+cluster.initial_master_nodes: ["node-1"]
 xpack.security.enabled: true
 xpack.security.transport.ssl.enabled: true
 ```
@@ -46,7 +48,7 @@ cd /usr/share/elasticsearch
 ls
 ```
 
-### Kibana 설치
+### Kibana 설치 및 환경 구성.
 
 - ElasticSearch 7.x Source List를 apt에서 참조 할 수 있도록 등록되어 있으면 kibana도 7.x로 설치됨.
 
@@ -55,22 +57,7 @@ sudo apt update
 sudo apt install kibana
 ```
 
-- 클라이언트 브라우저가 원격으로 kibana에 접속하기 위해서는 /etc/kibana/kibana.yml 파일에서 server.host를 0.0.0.0 으로 설정 필요.
-
-```sql
-server.host: "0.0.0.0"
-```
-
-- kibana 재 기동.
-
-```sql
-sudo systemctl restart kibana
-```
-
-### Kibana에서 Elasticsearch 관리
-
-- kibana에서 elasticsearch의 role등을 생성하기 위해서는 xpack.security를 활성화 하고  elasticsearch built in 사용자로 접속해야 함.
-- /etc/elasticsearch/elasticsearch.yml 파일에서 xpack.security.enabled: true 로 설정 필요
+- /etc/elasticsearch/elasticsearch.yml 파일에서 xpack.security.enabled: true 로 설정 재확인
 
 ```sql
 xpack.security.enabled: true
@@ -82,21 +69,36 @@ xpack.security.enabled: true
 sudo /usr/share/elasticsearch/bin/elasticsearch-setup-passwords interactive
 ```
 
-- 만약 xpack.security.enabled를 true로 설정했는데 built in 사용자 password를 설정하지 않고 kibana에 http로 접속할 경우 “Kibana server is not ready yet” 오류 발생.
+- elasticsearch-setup-passwords 명령어는 단 한번밖에 수행되지 않음. 만약에 passoword를 재 설정하고자 할 경우에는 다시 원래 bootstrap password를 적용한 후 elasticsearch-setup-passwords를 수행해야함. bootstrap password를 적용하는 방법은 먼저 elasticsearch와 kibana를 down시킨 후 아래 명령어를 적용. 적용 후 elasticsearch-setup-passwords를 재 적용함.
+
+```yaml
+bin/elasticsearch-keystore add "bootstrap.password"
+```
+
+- /etc/kibana/kibana.yml config 설정.
+
+```yaml
+server.host: "192.168.56.101"
+elasticsearch.hosts: ["http://192.168.56.101:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "elastic"
+elasticsearch.ssl.verificationMode: none
+```
+
 - elasticsearch와 kibana를 재 기동후 kibana 접속
 
 ```sql
 sudo systemctl restart elasticsearch kibana
 ```
 
-- kibana login 페이지에 username을 elastic, password를 elastic built-in 사용자의 password를 입력한 뒤 로그인 함.
+- 로컬 브라우저에서 [http://192.168.56.101:5601](http://192.168.56.101:5601)로 kibana login 페이지에 접속하여 username을 elastic, password를 elastic built-in 사용자의 password를 입력한 뒤 로그인 함.
 
-### Elasticsearch에서 connector용 role과 user 생성하기
+### Kibana에서 Elasticsearch sink connector용 role과 user 생성하기
 
 - kibana의 dev tools을 이용하여 role을 생성. 왼쪽 메뉴의 Management→ Dev Tools를 선택하고 왼쪽 clip 보드에 아래를 입력하고 실행 수행. 
-es_sink_connector_role 이라는 이름으로 신규 role을 생성하고 create_index, read, write, view_index_metadata를 모든 index에서 수행할 수 있는 privileges 할당. ( [https://incredible.ai/kafka/2022/04/01/Kafka-Connector-to-ElasticSearch/](https://incredible.ai/kafka/2022/04/01/Kafka-Connector-to-ElasticSearch/) 참조 )
+es_sink_connector_role 이라는 이름으로 신규 role을 생성하고 create_index, read, write, view_index_metadata를 모든 index에서 수행할 수 있는 privileges 할당.
 
-```sql
+```json
 POST /_security/role/es_sink_connector_role
 {
   "indices": [
@@ -225,3 +227,15 @@ GET mysqlavro.oc.customers/_search
 ```
 
 - es_customers index가 생성되었는지 elasticsearch에서 확인.
+
+server.host: "192.168.56.101"
+elasticsearch.hosts: ["http://192.168.56.101:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "elastic"
+elasticsearch.ssl.verificationMode: none
+
+server.host: "192.168.56.101"
+elasticsearch.hosts: ["http://192.168.56.101:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "elastic"
+elasticsearch.ssl.verificationMode: none
