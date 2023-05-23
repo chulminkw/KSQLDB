@@ -21,7 +21,7 @@ sudo apt update
 sudo apt install elasticsearch
 ```
 
-- sudo su - 로 root 권한으로 /etc/elasticsearch/elasticsearch.yml 파일의 network.host와 discovery.seed_hosts 설정을 0.0.0.0 으로 변경하여 localhost가 아닌 외부 client에서도 elasticsearch에 접속할 수 있게 설정. 또한 [xpack.security](http://xpack.security) 관련 설정도 true로 enable 시킴.
+- sudo su - 로 root 권한으로 /etc/elasticsearch/elasticsearch.yml 파일 설정 변경
 
 ```sql
 node.name: node-1
