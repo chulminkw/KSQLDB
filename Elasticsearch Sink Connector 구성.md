@@ -138,7 +138,7 @@ POST /_security/user/es_connect_dev
 http http://localhost:8083/connector-plugins
 ```
 
-### Elasticsearch Sink Connector 환경 설정 기본
+### Elasticsearch Sink Connector 환경 설정 - 01
 
 - ksqldb에서 신규 stream인 simple_stream_test_01 생성하되 Key 컬럼을 설정하지 않음.
 
