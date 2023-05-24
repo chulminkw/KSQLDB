@@ -98,7 +98,7 @@ sudo systemctl restart elasticsearch kibana
 - kibana의 dev tools을 이용하여 role을 생성. 왼쪽 메뉴의 Management→ Dev Tools를 선택하고 왼쪽 clip 보드에 아래를 입력하고 실행 수행. 
 es_sink_connector_role 이라는 이름으로 신규 role을 생성하고 create_index, read, write, view_index_metadata를 모든 index에서 수행할 수 있는 privileges 할당.
 
-```json
+```sql
 POST /_security/role/es_sink_connector_role
 {
   "indices": [
@@ -136,6 +136,101 @@ POST /_security/user/es_connect_dev
 
 ```sql
 http http://localhost:8083/connector-plugins
+```
+
+### Elasticsearch Sink Connector 환경 설정 기본
+
+- ksqldb에서 신규 stream인 simple_stream_test_01 생성하되 Key 컬럼을 설정하지 않음.
+
+```sql
+create stream simple_stream_test_01
+(
+  id int,
+  name varchar,
+  email varchar
+) with (
+  KAFKA_TOPIC = 'simple_stream_test_01',
+  VALUE_FORMAT ='JSON',
+  PARTITIONS = 1
+);
+```
+
+- 새롭게 생성된 Stream에 데이터를 insert 문으로 입력 후 Stream과 Topic 메시지 확인.
+
+```sql
+insert into simple_stream_test_01(id, name, email) values (1, 'test_name_01', 'test_email_01@test.domain');
+insert into simple_stream_test_01(id, name, email) values (2, 'test_name_02', 'test_email_02@test.domain');
+
+select * from simple_stream_test_01;
+
+describe simple_stream_test_01 extended;
+```
+
+- es_sink_simple_stream_test_01.json에 아래와 같은 설정으로 config 파일 생성. key.ignore와 schema.ignore를 false로 설정. 해당 설정은 테스트를 위한 것이며, 수행 시 schema 정보가 없어서 schema.ignore=false 설정 오류로 에러 발생.
+
+```sql
+{
+    "name": "es_sink_simple_stream_test_01",
+    "config": {
+        "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+        "tasks.max": "1",
+        "topics": "simple_stream_test_01",
+        "connection.url": "http://192.168.56.101:9200",
+        "connection.username": "",
+        "connection.password": "es_connect_dev",
+
+        "key.ignore": "false",
+        "schema.ignore": "false",
+
+        "key.converter": "org.apache.kafka.connect.storage.IntegerConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter.schemas.enable": "false"
+  
+    }
+}
+```
+
+- 아래와 같이 key.ignore, schema.ignore를 true로 설정하고 다시 connector 생성/등록
+
+```sql
+{
+    "name": "es_sink_simple_stream_test_01",
+    "config": {
+        "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+        "tasks.max": "1",
+        "topics": "simple_stream_test_01",
+        "connection.url": "http://192.168.56.101:9200",
+        "connection.username": "es_connect_dev",
+        "connection.password": "es_connect_dev",
+
+        "key.ignore": "true",
+        "schema.ignore": "true",
+        
+        "key.converter": "org.apache.kafka.connect.storage.IntegerConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter.schemas.enable": "false"
+  
+    }
+}
+```
+
+- kibana에서 simple_stream_test_01명으로 index가 생성됨을 확인
+- dev tool에서 아래 명령어를 입력하여 신규 생성 index와 document 확인
+
+```sql
+# 아래는 index 확인
+GET simple_stream_test_01
+
+# 아래는 simple_user_stream 인덱스의 모든 document 확인. 
+GET simple_stream_test_01/_search
+```
+
+- 아래와 같이 curl 또는 httpie로 REST API 호출할 수도 있음
+
+```sql
+curl -u elastic:elastic  -XGET '192.168.56.101:9200/simple_stream_test_01/_search?pretty'
+
+http -a elastic:elastic http://192.168.56.101:9200/simple_stream_test_01/_search
 ```
 
 ### Elasticsearch Sink Connector 환경 설정 및 생성
