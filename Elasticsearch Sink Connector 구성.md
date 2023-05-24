@@ -176,7 +176,7 @@ describe simple_stream_test_01 extended;
         "tasks.max": "1",
         "topics": "simple_stream_test_01",
         "connection.url": "http://192.168.56.101:9200",
-        "connection.username": "",
+        "connection.username": "es_connect_dev",
         "connection.password": "es_connect_dev",
 
         "key.ignore": "false",
