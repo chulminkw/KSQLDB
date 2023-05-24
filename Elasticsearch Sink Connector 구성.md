@@ -182,7 +182,6 @@ describe simple_stream_test_01 extended;
         "key.ignore": "false",
         "schema.ignore": "false",
 
-        "key.converter": "org.apache.kafka.connect.storage.IntegerConverter",
         "value.converter": "org.apache.kafka.connect.json.JsonConverter",
         "value.converter.schemas.enable": "false"
   
@@ -190,7 +189,7 @@ describe simple_stream_test_01 extended;
 }
 ```
 
-- 아래와 같이 key.ignore, schema.ignore를 true로 설정하고 다시 connector 생성/등록
+- 아래와 같이 key.ignore, schema.ignore를 true로 설정하고 다시 connector 생성/등록. 하지만 key.ignore와 schema.ignore를 true로 설정하는 것은 권장사항이 아님.
 
 ```sql
 {
@@ -206,7 +205,6 @@ describe simple_stream_test_01 extended;
         "key.ignore": "true",
         "schema.ignore": "true",
         
-        "key.converter": "org.apache.kafka.connect.storage.IntegerConverter",
         "value.converter": "org.apache.kafka.connect.json.JsonConverter",
         "value.converter.schemas.enable": "false"
   
