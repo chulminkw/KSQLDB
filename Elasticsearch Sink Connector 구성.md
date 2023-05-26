@@ -321,7 +321,7 @@ select * from simple_stream_test_02;
 print simple_stream_test_02 from beginning;
 ```
 
-### 멀티 Key(PK)기반의 Topic을 ES Sink Connector로 연동
+### 복합 Key(멀티 컬럼 PK)기반의 Topic을 ES Sink Connector로 연동
 
 ```sql
 CREATE STREAM customer_activity_stream_avro (
