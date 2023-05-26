@@ -226,9 +226,9 @@ GET simple_stream_test_01/_search
 - 아래와 같이 curl 또는 httpie로 REST API 호출할 수도 있음
 
 ```sql
-curl -u elastic:elastic  -XGET '192.168.56.101:9200/simple_stream_test_01/_search?pretty'
+curl -u es_search_sink:es_search_sink  -XGET '192.168.56.101:9200/simple_stream_test_01/_search?pretty'
 
-http -a elastic:elastic http://192.168.56.101:9200/simple_stream_test_01/_search
+http -a es_search_sink:es_search_sink http://192.168.56.101:9200/simple_stream_test_01/_search
 ```
 
 ### Elasticsearch Sink Connector 환경 설정(Avro 기반) - 02
@@ -388,33 +388,9 @@ print customer_activity_avro_mv01;
     }
 }
 
-register_connector es_sink_customer_activity_avro_mv01
 ```
 
-- 여러개의 key값을 가지는 struct 형태의 key는 ES의 document _id로 변환하지 못하므로 오류 발생.
-- 단일 key값을 가지는 MView를 생성.
-
-```sql
-create table customer_activity_avro_mv02
-(
-id varchar primary key,
-customer_id integer,
-activity_type varchar,
-cnt integer
-) 
-with 
-(
-KAFKA_TOPIC='customer_activity_avro_mv01', 
-KEY_FORMAT = 'AVRO',
-VALUE_FORMAT = 'AVRO',
-PARTITIONS = 1
-)
-as
-select  cast(customer_id as varchar) + activity_type as id,
-        customer_id, activity_type, cnt
-from customer_activity_avro_mv01;
- 
-```
+- document id로 사용하기 위해 customer_id + activity_type으로 추가적인 단일 컬럼 생성.
 
 ```sql
 create table customer_activity_avro_mv02
@@ -426,78 +402,43 @@ VALUE_FORMAT = 'AVRO',
 PARTITIONS = 1
 )
 as
-select  cast(customer_id as varchar) + activity_type as id,
-        customer_id, activity_type, cnt
-from customer_activity_avro_mv01;
- 
+select  customer_id, activity_type, max(rowtime) as rtime,
+        as_value(customer_id) as cust_id, as_value(activity_type) as act_type,
+        count(*) as cnt,
+        cast(customer_id as varchar) + activity_type as doc_id
+from customer_activity_stream_avro 
+group by customer_id, activity_type;
 ```
+
+- 메시지 Value값을 Key로 변환하는 SMT를 적용하여 ES Sink Connector 구성
 
 ```sql
-create table customer_activity_avro_mv02_1
-with 
-(
-KAFKA_TOPIC='customer_activity_avro_mv02_1', 
-KEY_FORMAT = 'AVRO',
-VALUE_FORMAT = 'AVRO',
-PARTITIONS = 1
-)
-as
-select  cast(customer_id as varchar) + '-'+ activity_type as id,
-        max(customer_id) as customer_id, max(activity_type) as activity_type, cnt
-from customer_activity_avro_mv01 
-group by cast(customer_id as varchar) + activity_type;
- 
-```
-
-### Elasticsearch Sink Connector 환경 설정 및 생성
-
-- 환경설정 시 주의할점
-    1. Elasticsearch Sink Connector는 기본적으로 key값이 필요. 만약 Topic에 key값이 Null일 경우는 입력 시 오류 발생
-    2. Debezium MySQL Source Connector로 만든 key값은 기본적으로 { } 로 포맷팅 됨. Elasticsearch는 id로 value 값 자체만 필요함. 따라서 SMT의 ValueToKey와 ExtractField를 이용해서 Key값을 value로 변환 필요. 
-    3. Elasticsearch Sink Connector는 별도의 index 명을 지정하는 파라미터가 없음. 기본적으로 topics에 설정된 이름을 가지고 Index를 생성함.  만약 Elasticsearch의 index명을 변경하기 위해서는 SMT를 이용해서 변경해야 함. 
-- Debezium MySQL Source Connector를 이용하여 Avro 형식으로 생성한 topic 메시지를 Elasticsearch로 입력하는 Sink Connector 생성.
-- 아래 설정으로 es_oc_sink_customers.json 파일을 생성
-
-```json
 {
-    "name": "es_oc_sink_customers",
+    "name": "es_sink_customer_activity_avro_mv02",
     "config": {
         "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
         "tasks.max": "1",
-        "topics": "mysqlavro.oc.customers",
+        "topics": "customer_activity_avro_mv02",
         "connection.url": "http://192.168.56.101:9200",
-        "connection.username": "elastic",
-        "connection.password": "elastic",
-        "type.name": "_doc",
+        "connection.username": "es_connect_dev",
+        "connection.password": "es_connect_dev",
 
+        "key.ignore": "false",
+        "schema.ignore": "false",
+        
         "key.converter": "io.confluent.connect.avro.AvroConverter",
         "value.converter": "io.confluent.connect.avro.AvroConverter",
         "key.converter.schema.registry.url": "http://localhost:8081",
-        "value.converter.schema.registry.url": "http://localhost:8081",
-
+        "value.converter.schema.registry.url": "http://localhost:8081", 
+     
         "transforms": "create_key, extract_key",
         "transforms.create_key.type": "org.apache.kafka.connect.transforms.ValueToKey",
-        "transforms.create_key.fields": "customer_id",
+        "transforms.create_key.fields": "DOC_ID",
         "transforms.extract_key.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
-        "transforms.extract_key.field": "customer_id"
+        "transforms.extract_key.field": "DOC_ID"
     }
 }
-```
 
-- 
-- Elasticsearch Sink Connector 등록
-
-```sql
-register_connector es_oc_sink_customers.json
-```
-
-- Elasticsearch에 해당 index 명으로 데이터가 만들어졌는지 kibana의 dev tool을 통해 조회
-
-```sql
-GET mysqlavro.oc.customers/_search
-{
-  "size": 200
-}
 ```
 
 ### Elasticsearch의 index명을 SMT로 변경
@@ -536,17 +477,3 @@ GET mysqlavro.oc.customers/_search
     }
 }
 ```
-
-- es_customers index가 생성되었는지 elasticsearch에서 확인.
-
-server.host: "192.168.56.101"
-elasticsearch.hosts: ["http://192.168.56.101:9200"]
-elasticsearch.username: "kibana_system"
-elasticsearch.password: "elastic"
-elasticsearch.ssl.verificationMode: none
-
-server.host: "192.168.56.101"
-elasticsearch.hosts: ["http://192.168.56.101:9200"]
-elasticsearch.username: "kibana_system"
-elasticsearch.password: "elastic"
-elasticsearch.ssl.verificationMode: none
