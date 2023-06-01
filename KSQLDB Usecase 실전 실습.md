@@ -228,13 +228,14 @@ WITH (
 KAFKA_TOPIC = 'shoe_orders_enriched_avro',
 KEY_FORMAT = 'AVRO',
 VALUE_FORMAT = 'AVRO',
-PARTITIONS = 1
+PARTITIONS = 1,
+TIMESTAMP = 'ts'
 )
 AS
 select a.order_id, a.customer_id as customer_id , c.first_name + ' ' + c.last_name as customer_name,
        a.product_id as product_id, b.brand, b.name as product_name, b.sale_price, b.rating,
        c.email, c.phone, c.street_address, c.state, c.zip_code, c.country_code,
-       1 as dummy, from_unixtime(a.ts) as ts
+       1 as dummy, a.ts as ts, from_unixtime(a.ts) as ts_format
 from shoe_orders a
   join shoes b on a.product_id = b.product_id
   join shoe_customers c on a.customer_id = c.customer_id;
