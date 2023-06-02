@@ -240,7 +240,7 @@ from shoe_orders a
   join shoes b on a.product_id = b.product_id
   join shoe_customers c on a.customer_id = c.customer_id;
 
-select * from shoe_orders_enriched limit 3;
+select * from shoe_orders_enriched emit changes limit 3;
 
 describe shoe_orders_enriched extended;
 ```
@@ -394,7 +394,8 @@ WITH (
 KAFKA_TOPIC = 'shoe_clickstream_enriched_avro',
 KEY_FORMAT = 'AVRO',
 VALUE_FORMAT = 'AVRO',
-PARTITIONS = 1
+PARTITIONS = 1,
+TIMESTAMP = 'ts'
 )
 AS
 select a.stream_id, a.product_id as product_id, a.user_id as user_id, a.view_time,
