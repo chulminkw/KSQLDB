@@ -403,7 +403,7 @@ select a.stream_id, a.product_id as product_id, a.user_id as user_id, a.view_tim
        b.brand, b.name as product_name, b.sale_price, b.rating,
        c.first_name + ' ' + c.last_name as customer_name,
        c.state, c.country_code,
-       1 as dummy, from_unixtime(a.ts) as ts,
+       1 as dummy, a.ts as ts, from_unixtime(a.ts) as ts_format
 from shoe_clickstream a
    join shoes b on a.product_id = b.product_id
    join shoe_customers c on a.user_id = c.customer_id
