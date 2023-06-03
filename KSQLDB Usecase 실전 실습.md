@@ -500,7 +500,7 @@ having avg(view_time) > 30
 emit changes;
 ```
 
-- 사용자별 세션당 접속 건수. 세션의 기준은 3분간 click이 없는 경우 하나의 세션으로 설정.
+- 사용자별 세션당 접속 건수. 세션의 기준은 40분간 click이 없는 경우 하나의 세션으로 설정.
 
 ```sql
 SELECT
@@ -509,7 +509,7 @@ SELECT
     from_unixtime(windowend) as w_end,
     COUNT(*) AS page_count
 FROM shoe_clickstream_enriched 
-WINDOW SESSION (3 minutes)
+WINDOW SESSION (40 minutes)
 GROUP BY user_id
 emit changes;
 ```
