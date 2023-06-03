@@ -506,7 +506,7 @@ emit changes;
 SELECT
     user_id,
     latest_by_offset(customer_name) as customer_name,
-    from_unixtime(windowend) as w_end,
+    from_unixtime(windowstart) as w_start, from_unixtime(windowend) as w_end,
     COUNT(*) AS page_count
 FROM shoe_clickstream_enriched 
 WINDOW SESSION (40 minutes)
