@@ -334,47 +334,139 @@ insert into device_status_stream values (1, '2023-02-10T05:22:32.931', 5.2, 13);
 insert into device_status_stream values (1, '2023-02-10T05:23:42.931', 5.2, 13);
 ```
 
-### Window Retention
+### Window Table의 제약 사항
 
-- Window Retention을 가지는 MView 생성.
+- key format은 JSON으로 설정.
 
 ```sql
-create table device_count_mv01
-as
-select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
-from device_status_stream window tumbling (size 1 minutes, retention 7 days) group by device_id emit changes;
-
-select * from device_count_mv01 emit changes;
-print DEVICE_COUNT_MV01;
-
-create table device_count_mv02
+--KEY_FORMAT KAFKA로 생성. 
+CREATE TABLE device_status_mv01
 as
 select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
 from device_status_stream window tumbling (size 1 minutes) group by device_id emit changes;
 
-select * from device_count_mv02 emit changes;
-print DEVICE_COUNT_MV02;
+select * from device_status_mv01 emit changes;
+
+drop table device_status_mv01 delete topic;
+
+-- KEY_FORMAT을 JSON으로 재 생성. 
+CREATE TABLE device_status_mv01
+with 
+(
+KAFKA_TOPIC = 'device_status_mv01_topic',
+PARTITIONS = 1,
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON'
+)
+as
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by device_id emit changes;
+
+select * from device_status_mv01 emit changes;
+
 ```
 
-- 아래와 같이 신규 데이터를 device_status_stream에 입력하고 device_count_mv01의 출력 결과를 확인.
+- dummy 컬럼값을 이용한 window Group by
 
 ```sql
-insert into device_status_stream values (1, '2023-02-11T05:23:32.931', 5.2, 13);
-insert into device_status_stream values (1, '2023-02-11T05:23:42.891', 7.4, 17);
+-- window 절에 group by 를 사용하지 않으므로 아래는 오류 발생. 
+select from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes)  emit changes;
 
-insert into device_status_stream values (1, '2023-03-23T05:23:32.931', 5.2, 13);
-insert into device_status_stream values (1, '2023-03-24T05:23:42.891', 7.4, 17);
+--dummy 값으로 group by 적용
+select from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by 1 emit changes;
 
-insert into device_status_stream values (1, '2023-04-28T05:23:32.931', 5.2, 13);
+-- CTAS로 만들 경우 group by 컬럼값을 반드시 select 절에 기술해야 함. 
+CREATE TABLE device_status_mv02
+with 
+(
+KAFKA_TOPIC = 'device_status_mv02_topic',
+PARTITIONS = 1,
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON'
+)
+as
+select 1 as dummy, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream window tumbling (size 1 minutes) group by 1 emit changes;
+
+```
+
+- window가 적용된 table에는 permanent query(ctas) 불가. window table간 조인 불가.
+
+```sql
+-- temporary query는 수행됨. 
+select * from device_status_mv01 where device_id = 1;
+
+-- permanent query는 수행 되지 않음. 
+create table device_status_mv03 
+as
+select * from device_status_mv01 where device_id = 1;
+
+-- window table간 조인 불가
+select * 
+from device_status_mv01 a
+   join device_status_mv02 b on a.device_id = b.device_id;
+
+```
+
+- timestamp가 입력일시(rowtime)을 가지는 device_status_stream_temp를 생성.
+
+```sql
+drop stream if exists device_status_stream_temp delete topic;
+
+CREATE STREAM device_status_stream_temp (
+  device_id BIGINT KEY,
+  create_ts TIMESTAMP,
+  temperature DOUBLE,
+  power_watt INT
+) WITH (
+  KAFKA_TOPIC = 'device_status_stream_temp_topic',
+  PARTITIONS = 1,
+  KEY_FORMAT = 'KAFKA',
+  VALUE_FORMAT = 'JSON'
+);
+
+insert into device_status_stream_temp values (1, '2023-02-10T05:23:32.931', 5.2, 13);
+insert into device_status_stream_temp values (1, '2023-02-10T05:23:42.891', 7.4, 17);
+insert into device_status_stream_temp values (1, '2023-02-10T05:23:53.288', 4.2, 1);
+insert into device_status_stream_temp values (1, '2023-02-10T05:24:22.211', 3.7, 11);
+insert into device_status_stream_temp values (1, '2023-02-10T05:24:32.911', 6.8, 9);
+-- 1~2 분 후에 입력
+insert into device_status_stream_temp values (1, '2023-02-10T05:27:15.244', 3.8, 8);
+insert into device_status_stream_temp values (2, '2023-02-10T05:21:19.131', 7.2, 3);
+insert into device_status_stream_temp values (2, '2023-02-10T05:21:25.231', 12.4, 22);
+insert into device_status_stream_temp values (2, '2023-02-10T05:21:39.531', 15.6, 31);
+insert into device_status_stream_temp values (2, '2023-02-10T05:22:00.111', 12.1, 42);
+insert into device_status_stream_temp values (2, '2023-02-10T05:22:19.121', 22.7, 19);
+insert into device_status_stream_temp values (2, '2023-02-10T05:24:32.333', 16.7, 29);
+```
+
+- device_status_stream_temp에 Window table CTAS 수행 후 TOPIC 내용 확인.
+
+```sql
+CREATE TABLE device_status_temp_mv01
+with 
+(
+KAFKA_TOPIC = 'device_status_temp_mv01_topic',
+PARTITIONS = 1,
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON'
+)
+as
+select device_id, from_unixtime(WINDOWSTART) as w_start, from_unixtime(WINDOWEND) as w_end, count(*) as cnt 
+from device_status_stream_temp window tumbling (size 1 minutes) group by device_id emit changes;
 
 ```
 
 - 실습을 위해 생성한 MView 삭제
 
 ```sql
-drop table device_count_mv01 delete topic;
+drop table device_status_temp_mv01 delete topic;
+drop stream device_status_stream_temp delete topic;
 
-drop table device_count_mv02 delete topic;
+drop table device_status_mv01 delete topic;
+drop table device_status_mv02 delete topic;
 
 ```
 
