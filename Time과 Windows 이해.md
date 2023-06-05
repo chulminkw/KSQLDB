@@ -392,7 +392,7 @@ from device_status_stream window tumbling (size 1 minutes) group by 1 emit chang
 
 ```
 
-- window가 적용된 table에는 permanent query(ctas) 불가. window table간 조인 불가.
+- window가 적용된 table에는 permanent query(ctas) 불가
 
 ```sql
 -- temporary query는 수행됨. 
@@ -402,11 +402,6 @@ select * from device_status_mv01 where device_id = 1;
 create table device_status_mv03 
 as
 select * from device_status_mv01 where device_id = 1;
-
--- window table간 조인 불가
-select * 
-from device_status_mv01 a
-   join device_status_mv01 b on a.device_id = b.device_id;
 
 ```
 
@@ -590,7 +585,7 @@ insert into device_master_stream values (1, '2023-02-10T05:23:32.931', 'Engine S
 
 ### Window 조인 - 02
 
-- Action 성 Stream과 Stream 조인시 Windown 조인의 활용
+- Action 성 Stream과 Stream 조인시 Window 조인의 활용
 
 ```sql
 drop stream equipment_status_stream delete topic;
