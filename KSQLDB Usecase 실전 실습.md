@@ -567,8 +567,7 @@ PARTITIONS = 1
 AS
 select a.order_id, a.customer_id as customer_id , c.first_name + ' ' + c.last_name as customer_name,
        a.product_id as product_id, b.brand, b.name as product_name, b.sale_price, b.rating,
-       c.email, c.phone, c.street_address, c.state, c.zip_code, c.country_code,
-       1 as dummy, a.rowtime as row_time, from_unixtime(a.rowtime) as row_time_format
+       c.email, c.phone, c.street_address, c.state, c.zip_code, c.country_code
 from shoe_orders_temp a
   join shoes b on a.product_id = b.product_id
   join shoe_customers c on a.customer_id = c.customer_id;
