@@ -515,6 +515,7 @@ emit changes;
 ```
 
 ### 실전 실습 - 03
+- Stream to Stream 조인에 기반한 분석 
 
 - 데이터 입력 시점(rowtime)을 timestamp 컬럼으로 가지는 shoe_orders_temp, shoe_clickstream_temp Stream 생성
 
@@ -553,7 +554,7 @@ describe shoe_orders_temp extended;
 describe shoe_clickstream_temp extended;
 ```
 
-- shoe_orders_temp Stream과 shoes, shoe_customers를 조인한 shoe_orders_temp_enriched Stream 생성
+- Stream to Steam 조인 수행. shoe_orders_temp Stream과 shoes, shoe_customers를 조인한 shoe_orders_temp_enriched Stream 생성
 
 ```sql
 CREATE STREAM shoe_orders_temp_enriched 
