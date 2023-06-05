@@ -406,7 +406,7 @@ select * from device_status_mv01 where device_id = 1;
 -- window table간 조인 불가
 select * 
 from device_status_mv01 a
-   join device_status_mv02 b on a.device_id = b.device_id;
+   join device_status_mv01 b on a.device_id = b.device_id;
 
 ```
 
