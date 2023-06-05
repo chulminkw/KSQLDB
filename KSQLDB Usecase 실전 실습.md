@@ -577,7 +577,7 @@ select * from shoe_orders_temp_enriched emit changes limit 3;
 describe shoe_orders_temp_enriched extended;
 ```
 
-- shoe_orders와 shoe_clickstream 조인. Stream to Stream 조인으로 user_id로 m:m 조인이 됨.
+- shoe_orders_temp_enriched와 shoe_clickstream_temp 조인. Stream to Stream 조인으로 user_id로 m:m 조인이 됨.
 
 ```sql
 
