@@ -514,6 +514,69 @@ GROUP BY user_id
 emit changes;
 ```
 
+### 실전 실습 - 03
+
+- 데이터 입력 시점(rowtime)을 timestamp 컬럼으로 가지는 shoe_orders_temp, shoe_clickstream_temp Stream 생성
+
+```sql
+CREATE STREAM shoe_orders_temp (
+  order_id int key,
+  product_id varchar,
+  customer_id varchar,
+  ts bigint
+)
+WITH (
+KAFKA_TOPIC = 'shoe_orders_avro',
+KEY_FORMAT = 'AVRO',
+VALUE_FORMAT = 'AVRO'
+);
+
+CREATE STREAM shoe_clickstream_temp (
+  stream_id varchar key,
+  product_id varchar,
+  user_id varchar,
+  view_time int,
+  page_url varchar,
+  ip varchar,
+  ts bigint 
+)
+WITH (
+KAFKA_TOPIC = 'shoe_clickstream_avro',
+KEY_FORMAT = 'AVRO',
+VALUE_FORMAT = 'AVRO'
+);
+
+select * from shoe_orders_temp emit changes limit 5;
+select * from shoe_clickstream_temp emit changes limit 5;
+
+describe shoe_orders_temp extended;
+describe shoe_clickstream_temp extended;
+```
+
+- shoe_orders_temp Stream과 shoes, shoe_customers를 조인한 shoe_orders_temp_enriched Stream 생성
+
+```sql
+CREATE STREAM shoe_orders_temp_enriched 
+WITH (
+KAFKA_TOPIC = 'shoe_orders_temp_enriched_avro',
+KEY_FORMAT = 'AVRO',
+VALUE_FORMAT = 'AVRO',
+PARTITIONS = 1
+)
+AS
+select a.order_id, a.customer_id as customer_id , c.first_name + ' ' + c.last_name as customer_name,
+       a.product_id as product_id, b.brand, b.name as product_name, b.sale_price, b.rating,
+       c.email, c.phone, c.street_address, c.state, c.zip_code, c.country_code,
+       1 as dummy, a.rowtime as row_time, from_unixtime(a.rowtime) as row_time_format
+from shoe_orders_temp a
+  join shoes b on a.product_id = b.product_id
+  join shoe_customers c on a.customer_id = c.customer_id;
+
+select * from shoe_orders_temp_enriched emit changes limit 3;
+
+describe shoe_orders_temp_enriched extended;
+```
+
 - shoe_orders와 shoe_clickstream 조인. Stream to Stream 조인으로 user_id로 m:m 조인이 됨.
 
 ```sql
@@ -527,9 +590,9 @@ CREATE STREAM shoe_orders_clickstream_enriched WITH (
 SELECT a.customer_id, a.product_id as product_id, a.order_id, a.customer_name, a.state, 
        a.brand, a.product_name, a.sale_price,
        b.stream_id, b.product_id as stream_product_id, b.view_time,
-       1 as dummy
-FROM shoe_orders_enriched a
-   JOIN shoe_clickstream b
+       1 as dummy, from_unixtime(a.rowtime) as orders_rowtime, from_unixtime(b.rowtime) as clickstream_rowtime
+FROM shoe_orders_temp_enriched a
+   JOIN shoe_clickstream_temp b
     WITHIN 1 HOUR GRACE PERIOD 1 MINUTE
     ON a.customer_id = b.user_id
 EMIT CHANGES;
