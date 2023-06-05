@@ -26,7 +26,6 @@ drop table order_cnt_by_state delete topic;
 drop table grade_cnt delete topic;
 drop table grade_by_customer delete topic;
 
-drop stream shoe_orders_clickstream_enriched delete topic;
 drop stream shoe_clickstream_enriched delete topic;
 drop stream shoe_orders_enriched delete topic;
 
