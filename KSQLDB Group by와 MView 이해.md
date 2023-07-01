@@ -65,16 +65,12 @@ SELECT ACTIVITY_TYPE, COUNT(*) AS CNT, SUM(ACTIVITY_POINT) AS SUM_P,
 select customer_id, latest_by_offset(activity_type) as latest_act_type 
 from customer_activity_stream group by customer_id emit changes;
 
+select customer_id, earliest_by_offset(activity_type) as earliest_act_type 
+from customer_activity_stream group by customer_id emit changes;
+
 select customer_id, latest_by_offset(activity_type, 2) as latest_act_type 
 from customer_activity_stream group by customer_id emit changes;
 
-select activity_type, max(activity_seq) max_act_id, 
-                      latest_by_offset(activity_seq) as latest_act_seq from customer_activity_stream group by activity_type emit changes;
-
-select 
-
-select customer_id, earliest_by_offset(activity_type) as earliest_act_type 
-from customer_activity_stream group by customer_id emit changes;
 ```
 
 ### Stream또는 Table에 따라 제약되는 Aggregation 함수
@@ -133,7 +129,7 @@ SELECT ACTIVITY_TYPE, COUNT(*) AS CNT, SUM(ACTIVITY_POINT) AS SUM_P,
 - 다른 ksql cli 창을 열고 customer_activity_stream 에 새로운 데이터를 입력 한 뒤 기존의 push 쿼리에 새로운 결과가 반영되었는지 확인.
 
 ```sql
-INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (3, 9, 'deposit',0.86);
+INSERT INTO customer_activity_stream (customer_id, activity_seq, activity_type, activity_point) VALUES (3, 9, 'deposit',0.86);
 ```
 
 - 임시 repartition내부 토픽과 changelog 내부 토픽 확인.  key가 아닌 컬럼으로 group by 시에는 repartition 내부 토픽이 생성됨.
@@ -180,23 +176,163 @@ select case when category is null then 'etc' else category end as category,
 group by case when category is null then 'etc' else category end emit changes;
 ```
 
-### Materialized View의 적용 - Stream.
+### Materialized View의 생성 - CTAS(Table)
 
-- Materialized View는 소스 Stream/Table을 가공/변환/필터링을 통한 데이터 중간 처리, 그리고 Group by/Join등을 통한 중간(또는 최종) 레벨의 집계 테이블을 생성하고 이를 Topic으로 저장하는 용도로 사용됨. MView는 KSQLDB에서 매우 활용도가 높음.
-- Create table as 명령어로 Materialzed View 생성. Materialized View는 Stream 또는 Table 형태로 생성 될 수 있으며, Create Stream as Select , 또는 Create Table as Select 와 같은 명령어 형식으로 생성될 수 있음.
-- Materialized view 생성시 select 절에 emit changes를 명시적으로 붙여 주는게 Stream/Table Pipeline을 기반으로 하고 있는 Materialized View의 의미를 더 강조 할 수 있음.  emit changes 절을 생략해도 Mview는 Source Stream/Table의 데이터 변경 사항을 자동으로 반영
+- customer_activity_stream Stream의 Group by & Aggregation결과를 CTAS를 이용하여 MView로 생성.  먼저 with 절을 생략하고 수행.
+
+```sql
+-- with절을 생략하고 수행시 CTAS의 Output Topic명은 CTAS Table명과 동일하게 생성되며 
+-- Format과 Partitions등은 from 절에 사용된 Stream의 Topic 환경을 그대로 따름. 
+create table customer_activity_mv01
+as
+select customer_id, avg(activity_point) as avg_point
+from customer_activity_stream group by customer_id;
+
+show tables;
+
+describe customer_activity_mv01 extended;
+
+show queries;
+```
+
+- with 절을 사용하여 다시 생성.
+
+```sql
+create table customer_activity_mv01
+with (
+KAFKA_TOPIC = 'customer_activity_mv01_topic',
+KEY_FORMAT = 'KAFKA', 
+VALUE_FORMAT = 'JSON',
+PARTITIONS = 3
+)
+as
+select customer_id, avg(activity_point) as avg_point
+from customer_activity_stream group by customer_id;
+
+show tables;
+
+describe customer_activity_mv01 extended;
+
+show queries;
+```
+
+### MView CTAS 데이터 처리 로직
+
+- CLI 창을 열고 PUSH 쿼리로 아래 수행.
+
+```sql
+select customer_id, avg(activity_point) as avg_point
+from customer_activity_stream group by customer_id emit changes;
+
+show queries;
+```
+
+- print 토픽명으로 현재 Topic의 메시지 내용 확인.
+
+```sql
+print customer_activity_mv01_topic;
+```
+
+- 아래와 같이 다른 CLI에서 신규 데이터를 customer_activity_stream에 입력하고 이전 Push 쿼리와 MView Pull 쿼리가 어떻게 출력되는지 확인.
+
+```sql
+INSERT INTO customer_activity_stream (customer_id, activity_seq, activity_type, activity_point) VALUES (3, 9, 'deposit',0.86);
+```
+
+- print 토픽명으로 현재 Topic의 메시지 내용 확인.
+
+```sql
+print customer_activity_mv01_topic;
+```
+
+### Group by절에 여러개의 컬럼들이 있는 MView 생성
+
+- Group by CTAS를 이용하여 Table기반의 MView를 만들때 Group by 절에 기술된 컬럼들은 자동으로 MView의 PK가 됨.  이때 Group by 절에 여러개의 컬럼들이 있을 경우 KEY_FORMAT을 KAFKA가 아닌 JSON또는 AVRO로 지정해 줘야함. 여러개의 PK 컬럼들은 KAFKA와 같은 Primitive 타입이 될 수 없기 때문임. 따라서 CTAS의 WITH절에 KEY_FORMAT=’JSON’과 같이 명시적으로 지정을 해줘야 함.
+
+```sql
+--아래는 여러개의 컬럼들로 group by를 CTAS 적용하지만, 
+--KEY_FORMAT을 명시적으로 설정하지 않아 기본값인 KAFKA가 여러개의 컬럼들을 PK로 만들수 없어서 오류 발생. 
+create table customer_activity_mv02
+with (
+KAFKA_TOPIC='customer_activity_mv02_topic', 
+KEY_FORMAT = 'KAFKA',
+VALUE_FORMAT = 'JSON',
+PARTITIONS = 1
+)
+as
+select customer_id, activity_type, count(*) as cnt 
+from customer_activity_stream group by customer_id, activity_type;
+
+-- 아래는 KEY_FORMAT을 명시적으로 JSON으로 지정. 
+create table customer_activity_mv02
+with (
+KAFKA_TOPIC='customer_activity_mv02_topic', 
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON',
+PARTITIONS = 1
+)
+as
+select customer_id, activity_type, count(*) as cnt from customer_activity_stream group by customer_id, activity_type;
+
+select * from customer_activity_mv02;
+
+print ustomer_activity_mv02_topic from beginning;
+
+drop table customer_activity_mv02 delete topic;
+
+```
+
+### MView 생성 시 auto.offset.reset 설정에 따른 유의 사항.
+
+- CTAS/CSAS 적용 시 set ‘auto.offset.reset’ = ‘earliest’를 적용하지 않은 상태에서 MVIEW를 만들 때는 참조하는 Stream/Table의 기존 데이터를 이용하지 못하고 신규로 입력되는 데이터 만을 가지고 만들므로 데이터가 아예 없을 수 있음.
+
+### MView 생성 시 Group by  컬럼들을 key외에 value로 만들기 - as_value() 활용
+
+- Mview 생성 시 Group by 컬럼들은 Kafka Topic의 key값으로 생성되며 value로는 생성되지 않음. 하지만 Connect 등으로 연동으로 타 시스템에 데이터로 전달 되어야 할 경우에는 주로 value가 사용됨.  group by 컬럼들을 value로 만들기 위해서는 as_value()를 적용해서 만들어야 함.
+
+```python
+
+create table customer_activity_mv02_asvalue
+with (
+KAFKA_TOPIC='customer_activity_mv02_asvalue_topic', 
+KEY_FORMAT = 'JSON',
+VALUE_FORMAT = 'JSON',
+PARTITIONS = 1
+)
+as
+select customer_id, activity_type, 
+as_value(customer_id) as customer_id_value, as_value(activity_type) as activity_type_value,
+count(*) as cnt from customer_activity_stream group by customer_id, activity_type;
+
+select * from customer_activity_mv02_asvalue emit changes;
+
+print customer_activity_mv02_asvalue from beginning;
+
+```
+
+### Materialized View 생성 CSAS(Stream).
+
 - 아래와 같이 Materialized view를 CSAS로 생성함.
 
 ```sql
-create stream customer_activity_stream_mv_01
+create stream customer_activity_strm_mv01 
+with (
+      KAFKA_TOPIC = 'customer_activity_strm_mv01_topic', 
+      KEY_FORMAT = 'KAFKA', 
+      VALUE_FORMAT = 'JSON', 
+      PARTITIONS = 3
+ )
 as
 select * from customer_activity_stream where activity_type in ('web_open', 'mobile_open') emit changes;
+
 ```
 
-- 새로운 데이터를 customer_activity_stream으로 입력하고 MView가 해당 데이터를 반영하는 지 확인.  Mview 생성 시 CSAS절에 emit changes을 적용하더라도 이 Mview를 Select 시에 Push Query로 호출하고자 한다면 반드시 Select Mview emit changes; 와 같이 호출해 줘야함.
+- 새로운 데이터를 customer_activity_stream으로 입력하고 MView가 해당 데이터를 반영하는 지 확인.
 
 ```sql
 INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (2, 10,'mobile_open',0.65);
+
+INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (4, 3, 'deposit', 0.35);
 
 select * from customer_activity_stream_mv_01;
 
@@ -213,24 +349,6 @@ select * from customer_activity_stream where activity_type in ('web_open', 'mobi
 INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (2, 11,'web_open',0.45);
 
 select * from customer_activity_stream_mv_02 emit changes;
-```
-
-- CSAS로 Mview가 생성되면 새로운 Stream과 Topic이 함께 생성됨. CSAS에 with 절로 MView의 topic 생성 속성을 별도로 지정하지 않으면 Topic명은 Mview의 이름을 그대로 적용하며(대문자로 Topic명을 저장) Topic의 key/value format과 Partition 갯수는 Source Stream Topic의 속성을 그대로 가져감.
-- 아래는 MView생성시 with절로 별도의 Topic 속성을 지정.
-
-```sql
-drop stream customer_activity_stream_mv_02 delete topic;
-
-create stream customer_activity_stream_mv_02
-with (
-	KAFKA_TOPIC='CUSTOMER_ACTIVITY_TOPIC',
-	VALUE_FORMAT='JSON',
-	PARTITIONS=3
-)
-as
-select * from customer_activity_stream where activity_type in ('web_open', 'mobile_open');
-
-SHOW TOPICS;
 ```
 
 - MView의 토픽으로 CUSTOMER_ACTIVITY_TOPIC이 생성되었는지 확인
@@ -266,7 +384,7 @@ select * from customer_activity_stream_mv_04;
 show topics;
 ```
 
-### MView 생성 시 유의 사항.
+### MView 생성 시 auto.offset.reset 설정에 따른 유의 사항.
 
 - CTAS/CSAS 적용 시 set ‘auto.offset.reset’ = ‘earliest’를 적용하지 않은 상태에서 MVIEW를 만들 때는 참조하는 Stream/Table의 기존 데이터를 이용하지 못하고 신규로 입력되는 데이터 만을 가지고 만들므로 데이터가 아예 없을 수 있음.
 
@@ -367,7 +485,7 @@ drop stream customer_activity_stream delete topic;
 select * from customer_activity_stream emit changes limit 1;
 ```
 
-### Group by절에 여러개의 컬럼들이 있을 경우
+### Group by절에 여러개의 컬럼들이 있는 MView 생성
 
 - Group by CTAS를 이용하여 Table기반의 MView를 만들때 Group by 절에 기술된 컬럼들은 자동으로 MView의 PK가 됨.  이때 Group by 절에 여러개의 컬럼들이 있을 경우 KEY_FORMAT을 KAFKA가 아닌 JSON또는 AVRO로 지정해 줘야함. 여러개의 PK 컬럼들은 KAFKA와 같은 Primitive 타입이 될 수 없기 때문임. 따라서 CTAS의 WITH절에 KEY_FORMAT=’JSON’과 같이 명시적으로 지정을 해줘야 함.
 
@@ -386,3 +504,10 @@ select customer_id, activity_type, count(*) as cnt from customer_activity_stream
 print ACTIVITY_STREAM_GRP_MV_05 from beginning;
 
 ```
+
+### Group by 시 Repartition
+
+- Key 또는 Primary Key가 아닌 컬럼으로 Group by를 수행할 경우 기존 Stream/Table Partition을 해당 Group by 컬럼으로 Repartition 수행해야 함.
+- Kafka의 분산 처리 핵심은 Partition임.  동일 KEY는 동일 Partition에 저장됨. Group by 절 컬럼이 Key인 경우 개별 Partition 별로 해당 Key값을 모두 가지고 있으므로 Repartition없이 기존 Partition 별로 Group by  수행 가능.
+- 이미 KEY 레벨로 Partition에 저장되어 있는 데이터를 Key가 아닌 다른 컬럼으로 Group by 를 수행할 경우 해당 컬럼으로 데이터를 Repartition해야 함. 왜냐하면 기존 Partition들은 Group by 컬럼값이 여러 Partition에 산재되어 있기 때문에 이를 특정 Group by 컬럼값은 특정 Partition에 있도록 해주는 작업을 수행해야 함.
+-
