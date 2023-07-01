@@ -306,7 +306,7 @@ count(*) as cnt from customer_activity_stream group by customer_id, activity_typ
 
 select * from customer_activity_mv02_asvalue emit changes;
 
-print customer_activity_mv02_asvalue from beginning;
+print customer_activity_mv02_asvalue_topic from beginning;
 
 ```
 
