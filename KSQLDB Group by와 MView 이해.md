@@ -330,9 +330,9 @@ select * from customer_activity_stream where activity_type in ('web_open', 'mobi
 - 새로운 데이터를 customer_activity_stream으로 입력하고 MView가 해당 데이터를 반영하는 지 확인.
 
 ```sql
-INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (2, 10,'mobile_open',0.65);
+INSERT INTO customer_activity_stream (2, 10,'mobile_open',0.65);
 
-INSERT INTO customer_activity_stream (customer_id, activity_id, activity_type, activity_point) VALUES (4, 3, 'deposit', 0.35);
+INSERT INTO customer_activity_stream ((4, 3, 'deposit', 0.35);
 
 select * from customer_activity_stream_mv_01;
 
