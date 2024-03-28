@@ -277,7 +277,7 @@ select * from simple_user_stream_test;
 ```sql
 select a.user_id, a.name, b.*
 from simple_user_stream_test a 
-inner join user_activity_stream b within 1 hours on a.id= b.user_id emit changes;
+inner join user_activity_stream b within 1 hours on a.user_id= b.user_id emit changes;
 ```
 
 - 조인키 컬럼 타입을 변환하여 조인이 가능한 수준이라면 cast() 함수를 이용하여 조인 수행.  만약 user_activity_stream을 생성한지가 오래 되었으면 within 절을 생성된 시점에 맞게 오랜 기간으로 설정할 것.  그렇지 않으면 방금 생성한 simple_user_stream_test와 within 기간이 맞지 않아서 조인 불가함.
@@ -319,7 +319,7 @@ select * from simple_user_table emit changes;
 
 select b.user_id b.name, a.* 
 from user_activity_stream a
-inner join simple_user_table_test b on cast(a.user_id as varchar) = b.id emit changes;
+inner join simple_user_table_test b on cast(a.user_id as varchar) = b.user_id emit changes;
 
 -- 아래는 table의 primary key를 가공하여 조인 시도하나 수행 안됨. 
 select b.user_id, b.name, a.* 
